@@ -11,8 +11,8 @@ use eframe::egui;
 fn main() -> eframe::Result<()> {
     let options = eframe::NativeOptions {
         viewport: egui::ViewportBuilder::default()
-            .with_inner_size([420.0, 340.0])
-            .with_min_inner_size([340.0, 240.0])
+            .with_inner_size([460.0, 340.0])
+            .with_min_inner_size([460.0, 240.0])
             .with_title("VRCText")
             .with_app_id("vrctext"),
         ..Default::default()

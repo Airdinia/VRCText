@@ -87,7 +87,7 @@ impl TtsEngine {
         }];
         for (name, _) in enum_voice_tokens() {
             out.push(Choice {
-                label: name.clone(),
+                label: shorten_voice_label(&name),
                 key: Some(name),
             });
         }
@@ -148,6 +148,14 @@ fn set_voice_output(voice: &ISpVoice, device_id: u32) -> bool {
         };
         voice.SetOutput(&unk, true).is_ok()
     }
+}
+
+/// Trim SAPI voice descriptions for compact display in the UI.
+/// Example: "Microsoft Huihui Desktop - Chinese (Simplified, PRC)"
+///       → "Microsoft Huihui"
+fn shorten_voice_label(name: &str) -> String {
+    let base = name.split(" - ").next().unwrap_or(name);
+    base.replace(" Desktop", "").replace(" Server", "").trim().to_string()
 }
 
 fn enumerate_wave_out() -> Vec<(u32, String)> {

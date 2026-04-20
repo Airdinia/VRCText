@@ -12,7 +12,7 @@ const MAX_CHARS: usize = 144;
 const TYPING_HEARTBEAT: Duration = Duration::from_millis(1500);
 const TYPING_IDLE_OFF: Duration = Duration::from_millis(2000);
 const STATUS_FADE: Duration = Duration::from_millis(1800);
-const LONG_PRESS: Duration = Duration::from_millis(2000);
+const LONG_PRESS: Duration = Duration::from_millis(500);
 
 struct HoldState {
     index: usize,
@@ -428,6 +428,12 @@ impl VRCTextApp {
                             }
 
                             ui.add_space(6.0);
+                            ui.add(
+                                egui::Separator::default()
+                                    .vertical()
+                                    .spacing(0.0),
+                            );
+                            ui.add_space(6.0);
 
                             // TTS toggle (disabled if SAPI unavailable)
                             let tts_avail = self.tts.available();
@@ -543,7 +549,10 @@ impl VRCTextApp {
 
                     ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                         if ui
-                            .add(theme::accent_button("发送  ⏎", egui::vec2(96.0, 30.0)))
+                            .add(theme::accent_button(
+                                "发送 [Enter]",
+                                egui::vec2(108.0, 30.0),
+                            ))
                             .clicked()
                         {
                             self.send_message();
@@ -937,7 +946,7 @@ fn render_row(
                         .stroke(egui::Stroke::new(1.0, theme::BORDER_STRONG))
                         .min_size(egui::vec2(28.0, 22.0));
                         let resp = ui.add(btn).on_hover_text(
-                            "短按：添加到输入框\n长按 2 秒：直接重发",
+                            "短按：添加到输入框\n长按 0.5 秒：直接重发",
                         );
                         if resp.clicked() && !hold_fired {
                             action = Some(RowAction::Append(idx));
