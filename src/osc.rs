@@ -1,33 +1,25 @@
+use rosc::{OscMessage, OscPacket, OscType};
 use std::io;
 use std::net::{SocketAddr, UdpSocket};
 
-fn pad_to_4(v: &mut Vec<u8>) {
-    while v.len() % 4 != 0 {
-        v.push(0);
-    }
-}
-
-fn write_osc_string(v: &mut Vec<u8>, s: &str) {
-    v.extend_from_slice(s.as_bytes());
-    v.push(0);
-    pad_to_4(v);
-}
-
 pub fn encode_chatbox_input(msg: &str, bypass: bool, sound: bool) -> Vec<u8> {
-    let mut out = Vec::with_capacity(64 + msg.len());
-    write_osc_string(&mut out, "/chatbox/input");
-    let tag = format!(",s{}{}", if bypass { 'T' } else { 'F' }, if sound { 'T' } else { 'F' });
-    write_osc_string(&mut out, &tag);
-    write_osc_string(&mut out, msg);
-    out
+    let pkt = OscPacket::Message(OscMessage {
+        addr: "/chatbox/input".into(),
+        args: vec![
+            OscType::String(msg.into()),
+            OscType::Bool(bypass),
+            OscType::Bool(sound),
+        ],
+    });
+    rosc::encoder::encode(&pkt).unwrap_or_default()
 }
 
 pub fn encode_chatbox_typing(typing: bool) -> Vec<u8> {
-    let mut out = Vec::with_capacity(32);
-    write_osc_string(&mut out, "/chatbox/typing");
-    let tag = if typing { ",T" } else { ",F" };
-    write_osc_string(&mut out, tag);
-    out
+    let pkt = OscPacket::Message(OscMessage {
+        addr: "/chatbox/typing".into(),
+        args: vec![OscType::Bool(typing)],
+    });
+    rosc::encoder::encode(&pkt).unwrap_or_default()
 }
 
 pub fn send(socket: &UdpSocket, target: SocketAddr, packet: &[u8]) -> io::Result<()> {

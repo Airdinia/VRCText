@@ -164,9 +164,6 @@ cargo run
 # 发布版
 cargo build --release
 # 产物：target/release/vrctext.exe
-
-# 运行诊断工具（不走 GUI，打印 SAPI/WaveOut 各步 HRESULT）
-cargo run --release --bin vrctext-diag
 ```
 
 ### 发布 Profile
@@ -189,16 +186,14 @@ src/
 ├── main.rs        # 入口；#![windows_subsystem = "windows"]；NativeOptions
 ├── app.rs         # egui::App 实现：状态 + 全部 UI
 ├── theme.rs       # 调色板 + 样式注入 + 常用 Frame 预设
-├── osc.rs         # 手写 OSC 打包（/chatbox/input + /chatbox/typing） + UDP 发送
+├── osc.rs         # OSC 打包（/chatbox/input + /chatbox/typing） + UDP 发送
 ├── config.rs      # Config::load/save，toml 持久化
-├── tts.rs         # SAPI 封装：ISpVoice + SpMMAudioOut + ISpObjectTokenCategory
-└── bin/
-    └── diag.rs    # 诊断 CLI：枚举设备、逐步测试 SAPI 调用链
+└── tts.rs         # SAPI 封装：ISpVoice + SpMMAudioOut + ISpObjectTokenCategory
 ```
 
 | 模块 | 外部依赖 |
 |---|---|
-| `osc.rs` | `std::net::UdpSocket`（无第三方） |
+| `osc.rs` | `rosc` + `std::net::UdpSocket` |
 | `tts.rs` | `windows` crate（SAPI COM + WaveOut API） |
 | `app.rs` | `eframe`/`egui` + `chrono` |
 | `config.rs` | `serde` + `toml` + `directories` |
@@ -212,7 +207,7 @@ VRChat 的 OSC 端点：
 | `/chatbox/input` | `(s, T/F, T/F)` | 文字 + bypassKeyboard + playSound |
 | `/chatbox/typing` | `(T/F)` | 是否显示 "..." 打字气泡 |
 
-本项目不依赖 `rosc` crate，手写了 30 行 OSC 编码（4 字节对齐 + `T`/`F` 布尔类型标签）。
+使用 [`rosc`](https://crates.io/crates/rosc) crate 编码，布尔值走 OSC 1.1 的 `T`/`F` 类型标签（无数据负载）。
 
 ### SAPI 实现要点
 

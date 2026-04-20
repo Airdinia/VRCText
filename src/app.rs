@@ -421,6 +421,9 @@ impl VRCTextApp {
                                 if self.show_settings {
                                     self.tts_devices = self.tts.device_choices();
                                     self.tts_voices = self.tts.voice_choices();
+                                } else {
+                                    self.tts_devices = Vec::new();
+                                    self.tts_voices = Vec::new();
                                 }
                             }
 
