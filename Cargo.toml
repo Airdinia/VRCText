@@ -11,6 +11,11 @@ toml = "0.8"
 directories = "5"
 chrono = { version = "0.4", default-features = false, features = ["clock"] }
 rosc = "0.10"
+sherpa-onnx = { version = "1.12", default-features = false, features = ["static"] }
+cpal = "0.16"
+ureq = "2"
+tar = "0.4"
+bzip2 = "0.4"
 windows = { version = "0.58", features = [
     "Win32_Foundation",
     "Win32_System_Com",

@@ -2,6 +2,7 @@
 
 mod app;
 mod config;
+mod download;
 mod osc;
 mod theme;
 mod tts;

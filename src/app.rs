@@ -1,7 +1,8 @@
-use crate::config::Config;
+use crate::config::{Config, Engine};
+use crate::download::ModelDownloader;
 use crate::osc;
 use crate::theme;
-use crate::tts::{Choice, TtsEngine};
+use crate::tts::{Choice, SapiEngine, SherpaEngine, TtsEngine};
 
 use chrono::{DateTime, Datelike, Local, TimeZone};
 use eframe::egui;
@@ -42,9 +43,11 @@ pub struct VRCTextApp {
     applied_window_level: Option<bool>,
     hold: Option<HoldState>,
     clear_confirm_at: Option<Instant>,
-    tts: TtsEngine,
+    delete_models_confirm_at: Option<Instant>,
+    tts: Box<dyn TtsEngine>,
     tts_devices: Vec<Choice>,
     tts_voices: Vec<Choice>,
+    model_downloader: Option<ModelDownloader>,
 }
 
 impl VRCTextApp {
@@ -58,6 +61,7 @@ impl VRCTextApp {
         let now = Instant::now();
         let ip_input = config.ip.clone();
         let port_input = config.port.to_string();
+        let tts = build_engine(config.engine);
         let mut app = Self {
             text: String::new(),
             config,
@@ -75,19 +79,21 @@ impl VRCTextApp {
             applied_window_level: None,
             hold: None,
             clear_confirm_at: None,
-            tts: TtsEngine::new(),
+            delete_models_confirm_at: None,
+            tts,
             tts_devices: Vec::new(),
             tts_voices: Vec::new(),
+            model_downloader: None,
         };
         let mut cfg_dirty = false;
-        let resolved_device = app.tts.apply_device(app.config.tts_device_name.as_deref());
-        if resolved_device.as_deref() != app.config.tts_device_name.as_deref() {
-            app.config.tts_device_name = resolved_device;
+        let resolved_device = app.tts.apply_device(app.config.current_device());
+        if resolved_device.as_deref() != app.config.current_device() {
+            app.config.set_current_device(resolved_device);
             cfg_dirty = true;
         }
-        let resolved_voice = app.tts.apply_voice(app.config.tts_voice_name.as_deref());
-        if resolved_voice.as_deref() != app.config.tts_voice_name.as_deref() {
-            app.config.tts_voice_name = resolved_voice;
+        let resolved_voice = app.tts.apply_voice(app.config.current_voice());
+        if resolved_voice.as_deref() != app.config.current_voice() {
+            app.config.set_current_voice(resolved_voice);
             cfg_dirty = true;
         }
         if cfg_dirty {
@@ -334,6 +340,7 @@ impl VRCTextApp {
 impl eframe::App for VRCTextApp {
     fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
         self.apply_window_level(ctx);
+        self.poll_downloader(ctx);
 
         let enter_send = ctx.input_mut(|i| {
             i.consume_key(egui::Modifiers::NONE, egui::Key::Enter)
@@ -455,12 +462,15 @@ impl VRCTextApp {
                             );
                             ui.add_space(6.0);
 
-                            // TTS toggle (disabled if SAPI unavailable)
+                            // TTS toggle (disabled if engine unavailable)
                             let tts_avail = self.tts.available();
-                            let tts_tip = if tts_avail {
-                                "语音朗读 (Windows SAPI)"
+                            let tts_tip: &str = if !tts_avail {
+                                engine_unavailable_msg(self.config.engine)
                             } else {
-                                "系统 SAPI 不可用"
+                                match self.config.engine {
+                                    Engine::Sapi => "语音朗读 (SAPI)",
+                                    Engine::Sherpa => "语音朗读 (AI)",
+                                }
                             };
                             ui.add_enabled_ui(tts_avail, |ui| {
                                 let r = icon_button(ui, "🔊", self.config.tts_enabled, tts_tip);
@@ -643,11 +653,47 @@ impl VRCTextApp {
             // ── Voice section ────────────────────────────────
             section_header(ui, "语音朗读");
             theme::card_frame().show(ui, |ui| {
+                // Engine selector stays visible even when the chosen backend
+                // is unavailable — so the user can always swap to a working
+                // one without needing to open the picker blind.
+                let mut engine_pick: Option<Engine> = None;
+                egui::Grid::new("engine_grid")
+                    .num_columns(2)
+                    .spacing([10.0, 8.0])
+                    .show(ui, |ui| {
+                        ui.label(label_text("引擎"));
+                        egui::ComboBox::from_id_salt("tts_engine_combo")
+                            .selected_text(engine_label(self.config.engine))
+                            .width(200.0)
+                            .show_ui(ui, |ui| {
+                                for e in [Engine::Sapi, Engine::Sherpa] {
+                                    let sel = self.config.engine == e;
+                                    if ui
+                                        .selectable_label(sel, engine_label(e))
+                                        .clicked()
+                                        && !sel
+                                    {
+                                        engine_pick = Some(e);
+                                    }
+                                }
+                            });
+                        ui.end_row();
+                    });
+                if let Some(e) = engine_pick {
+                    self.switch_engine(e);
+                }
+                ui.add_space(6.0);
+
                 if !self.tts.available() {
-                    ui.label(
-                        egui::RichText::new("系统 SAPI 不可用")
-                            .color(theme::DANGER),
-                    );
+                    match self.config.engine {
+                        Engine::Sapi => {
+                            ui.label(
+                                egui::RichText::new(engine_unavailable_msg(Engine::Sapi))
+                                    .color(theme::DANGER),
+                            );
+                        }
+                        Engine::Sherpa => self.render_sherpa_unavailable(ui),
+                    }
                 } else {
                     let mut device_pick: Option<Option<String>> = None;
                     let mut voice_pick: Option<Option<String>> = None;
@@ -659,7 +705,7 @@ impl VRCTextApp {
                             device_pick = choice_combo(
                                 ui,
                                 "tts_device_combo",
-                                self.config.tts_device_name.as_deref(),
+                                self.config.current_device(),
                                 &self.tts_devices,
                             );
                             ui.end_row();
@@ -668,7 +714,7 @@ impl VRCTextApp {
                             voice_pick = choice_combo(
                                 ui,
                                 "tts_voice_combo",
-                                self.config.tts_voice_name.as_deref(),
+                                self.config.current_voice(),
                                 &self.tts_voices,
                             );
                             ui.end_row();
@@ -676,13 +722,13 @@ impl VRCTextApp {
 
                     if let Some(new_key) = device_pick {
                         let applied = self.tts.apply_device(new_key.as_deref());
-                        self.config.tts_device_name = applied;
+                        self.config.set_current_device(applied);
                         self.config.save();
                         self.set_status("TTS 输出设备已切换");
                     }
                     if let Some(new_key) = voice_pick {
                         let applied = self.tts.apply_voice(new_key.as_deref());
-                        self.config.tts_voice_name = applied;
+                        self.config.set_current_voice(applied);
                         self.config.save();
                         self.set_status("TTS 语音已切换");
                     }
@@ -709,12 +755,25 @@ impl VRCTextApp {
                     ui.add_space(6.0);
                     ui.label(
                         egui::RichText::new(
-                            "💡 想让队友听到：选一个虚拟音频线缆（如 CABLE Input），\
-                             并将 VRChat 麦克风设为该线缆的 Output 端。",
+                            "💡 要路由到 VRChat 麦克风需配合虚拟音频线缆\
+                             （如 CABLE Input）作为输出设备。",
                         )
                         .size(11.0)
                         .color(theme::TEXT_WEAK),
                     );
+                }
+
+                // Delete-downloaded-models lives inside the AI card regardless
+                // of availability so users can nuke a half-downloaded/corrupt
+                // bundle that's keeping the engine from loading.
+                if self.config.engine == Engine::Sherpa
+                    && self.model_downloader.is_none()
+                    && models_present()
+                {
+                    ui.add_space(8.0);
+                    ui.separator();
+                    ui.add_space(6.0);
+                    self.render_delete_models_row(ui);
                 }
             });
 
@@ -779,6 +838,249 @@ impl VRCTextApp {
 
                 ui.add_space(8.0);
             });
+    }
+
+    /// Erase everything under `%APPDATA%\vrctext\models\` and rebuild the
+    /// current engine. If config wanted Sherpa, it comes back unavailable
+    /// and the download button reappears — which is what the user asked for.
+    fn delete_downloaded_models(&mut self) {
+        if self.model_downloader.is_some() {
+            self.set_status("请先等待下载完成或取消");
+            return;
+        }
+        let Some(dir) = crate::config::models_dir() else {
+            self.set_status("无法解析模型目录");
+            return;
+        };
+        // Release the current engine's grip on the model before we touch
+        // the filesystem; OfflineTts doesn't keep files open after `create`,
+        // but swapping to SAPI drops the Arc deterministically so any
+        // in-flight synth thread's callback sees a cancelled counter.
+        self.tts.stop();
+        self.tts = Box::new(SapiEngine::new());
+        match std::fs::remove_dir_all(&dir) {
+            Ok(()) => self.set_status("已删除本地 AI 模型"),
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => {}
+            Err(e) => {
+                self.set_status(&format!("删除失败: {e}"));
+                // Still try to rebuild below — the user's intent was to
+                // clear the AI state even if a stray file blocked us.
+            }
+        }
+        self.tts = build_engine(self.config.engine);
+        self.tts_devices = self.tts.device_choices();
+        self.tts_voices = self.tts.voice_choices();
+    }
+
+    /// Kick off a background download of the default Matcha Chinese bundle
+    /// into `%APPDATA%\vrctext\models\`. The worker thread updates its
+    /// `DownloadState` in place; `poll_downloader` observes progress each
+    /// frame and triggers engine reload on completion.
+    fn start_model_download(&mut self) {
+        if self.model_downloader.is_some() {
+            return;
+        }
+        match crate::config::models_dir() {
+            Some(dir) => {
+                self.model_downloader = Some(ModelDownloader::start(dir));
+                self.set_status("开始下载模型…");
+            }
+            None => self.set_status("无法解析模型目录"),
+        }
+    }
+
+    /// While a download is running, keep repainting so the progress bar moves
+    /// even without user input. On success, rebuild the engine so the newly
+    /// downloaded model becomes selectable.
+    fn poll_downloader(&mut self, ctx: &egui::Context) {
+        let Some(dl) = &self.model_downloader else {
+            return;
+        };
+        let state = dl.snapshot();
+        if !state.done {
+            ctx.request_repaint_after(Duration::from_millis(100));
+            return;
+        }
+        if state.error.is_some() {
+            // Leave the downloader in place so the UI can render the error
+            // and expose a retry button. Cleared only by user action.
+            return;
+        }
+        self.model_downloader = None;
+        self.tts = build_engine(self.config.engine);
+        self.tts_voices = self.tts.voice_choices();
+        self.tts_devices = self.tts.device_choices();
+        let _ = self.tts.apply_device(self.config.current_device());
+        let applied_voice = self.tts.apply_voice(self.config.current_voice());
+        if applied_voice.as_deref() != self.config.current_voice() {
+            self.config.set_current_voice(applied_voice);
+            self.config.save();
+        }
+        self.set_status("AI 模型已就绪");
+    }
+
+    fn render_delete_models_row(&mut self, ui: &mut egui::Ui) {
+        let confirming = self
+            .delete_models_confirm_at
+            .map_or(false, |t| t.elapsed() < Duration::from_secs(5));
+        if !confirming {
+            let btn = egui::Button::new(
+                egui::RichText::new("🗑  删除已下载模型").color(theme::DANGER),
+            );
+            if ui
+                .add(btn)
+                .on_hover_text("移除 %APPDATA%\\vrctext\\models\\ 下的全部文件")
+                .clicked()
+            {
+                self.delete_models_confirm_at = Some(Instant::now());
+            }
+        } else {
+            ui.colored_label(theme::DANGER, "⚠ 确认删除本地 AI 模型？下次使用需重新下载");
+            ui.add_space(4.0);
+            ui.horizontal(|ui| {
+                let confirm = egui::Button::new(
+                    egui::RichText::new("确认删除")
+                        .color(egui::Color32::WHITE)
+                        .strong(),
+                )
+                .fill(theme::DANGER);
+                if ui.add(confirm).clicked() {
+                    self.delete_downloaded_models();
+                    self.delete_models_confirm_at = None;
+                }
+                if ui.button("取消").clicked() {
+                    self.delete_models_confirm_at = None;
+                }
+            });
+        }
+    }
+
+    fn render_sherpa_unavailable(&mut self, ui: &mut egui::Ui) {
+        let snapshot = self.model_downloader.as_ref().map(|d| d.snapshot());
+        match snapshot {
+            None => {
+                // Two distinct failure modes land here: (a) no files at all,
+                // and (b) files present but engine failed to start. Showing
+                // the download button in (b) is a lie — the user just did
+                // that and it didn't work; they need the real reason.
+                match self.tts.unavailable_detail() {
+                    Some(detail) => {
+                        ui.label(
+                            egui::RichText::new("AI 引擎启动失败")
+                                .color(theme::DANGER),
+                        );
+                        ui.add_space(4.0);
+                        ui.label(
+                            egui::RichText::new(detail)
+                                .size(11.0)
+                                .color(theme::TEXT_WEAK),
+                        );
+                        ui.add_space(4.0);
+                        ui.label(
+                            egui::RichText::new(
+                                "可尝试点下方\"删除已下载模型\"然后重新下载。",
+                            )
+                            .size(11.0)
+                            .color(theme::TEXT_WEAK),
+                        );
+                    }
+                    None => {
+                        ui.label(
+                            egui::RichText::new("未检测到 AI 模型")
+                                .color(theme::WARNING),
+                        );
+                        ui.add_space(4.0);
+                        ui.label(
+                            egui::RichText::new(
+                                "下载 Matcha 中文模型 + 声码器，共约 85 MB；\
+                                 将保存到 %APPDATA%\\vrctext\\models\\。",
+                            )
+                            .size(11.0)
+                            .color(theme::TEXT_WEAK),
+                        );
+                        ui.add_space(6.0);
+                        if ui.button("下载模型").clicked() {
+                            self.start_model_download();
+                        }
+                    }
+                }
+            }
+            Some(state) => {
+                ui.label(&state.status);
+                ui.add(
+                    egui::ProgressBar::new(state.progress)
+                        .show_percentage()
+                        .desired_width(260.0),
+                );
+                if let Some(err) = &state.error {
+                    ui.add_space(4.0);
+                    ui.colored_label(theme::DANGER, format!("下载失败: {err}"));
+                    ui.horizontal(|ui| {
+                        if ui.button("重试").clicked() {
+                            self.model_downloader = None;
+                            self.start_model_download();
+                        }
+                        if ui.button("取消").clicked() {
+                            self.model_downloader = None;
+                        }
+                    });
+                }
+            }
+        }
+    }
+
+    /// Swap TTS backend and refresh the device/voice picker state. Each
+    /// engine has its own slot in `Config` for device/voice names, so
+    /// switching engines never clobbers the other engine's remembered
+    /// selection.
+    fn switch_engine(&mut self, next: Engine) {
+        if self.config.engine == next {
+            return;
+        }
+        self.tts.stop();
+        self.tts = build_engine(next);
+        self.config.engine = next;
+        self.tts_devices = self.tts.device_choices();
+        self.tts_voices = self.tts.voice_choices();
+        let _ = self.tts.apply_device(self.config.current_device());
+        let _ = self.tts.apply_voice(self.config.current_voice());
+        self.config.save();
+        self.set_status(match next {
+            Engine::Sapi => "已切换到 SAPI",
+            Engine::Sherpa => "已切换到 AI 引擎",
+        });
+    }
+}
+
+/// Does `%APPDATA%\vrctext\models\` contain anything? Used to gate the
+/// "删除已下载模型" button — we hide it when there's nothing to delete.
+fn models_present() -> bool {
+    match crate::config::models_dir() {
+        Some(dir) => std::fs::read_dir(&dir)
+            .map(|mut it| it.next().is_some())
+            .unwrap_or(false),
+        None => false,
+    }
+}
+
+fn build_engine(kind: Engine) -> Box<dyn TtsEngine> {
+    match kind {
+        Engine::Sapi => Box::new(SapiEngine::new()),
+        Engine::Sherpa => Box::new(SherpaEngine::new()),
+    }
+}
+
+fn engine_label(e: Engine) -> &'static str {
+    match e {
+        Engine::Sapi => "SAPI（系统默认）",
+        Engine::Sherpa => "AI 引擎（开发中）",
+    }
+}
+
+fn engine_unavailable_msg(e: Engine) -> &'static str {
+    match e {
+        Engine::Sapi => "系统 SAPI 不可用",
+        Engine::Sherpa => "AI 引擎开发中，暂不可用",
     }
 }
 

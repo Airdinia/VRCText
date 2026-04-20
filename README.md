@@ -1,14 +1,16 @@
 # VRCText
 
-极简、轻量的 **VRChat OSC 聊天框发送器 + SAPI 语音朗读** Windows 工具。打字发到头顶气泡，同时可选朗读给队友听。单文件 **3.4 MB**，双击即开，零运行时依赖。
+极简、轻量的 **VRChat OSC 聊天框发送器 + 语音朗读** Windows 工具。打字发到头顶气泡，同时可选朗读。单 exe 约 **22 MB**，双击即开，零运行时依赖。
 
 ---
 
 ## 功能
 
 - 打字→**头顶气泡**（通过 VRChat OSC，绕过游戏内软键盘）
-- 打字→**SAPI 语音朗读**（Windows 自带，无需下载语音包 / API key）
-- 可选 **语音 / 语言** 和 **输出设备**（配合虚拟音频线缆让队友听到）
+- 打字→**语音朗读**，两档引擎：
+  - **SAPI** — Windows 自带，零下载，启动即用
+  - **AI 引擎** — 可选升级，更自然的中文合成，首次用时应用内下载 ~85 MB 模型到 `%APPDATA%`
+- 可选 **语音** 和 **输出设备**（配合虚拟音频线缆路由到 VRChat 麦克风）
 - **历史记录**：悬停重发（短按追加到输入框，长按 0.5 秒直接重发）
 - **打字指示器**、窗口置顶、深色 UI、配置持久化
 
@@ -48,22 +50,23 @@
 
 在输入框打字，`Enter` 发送 / `Shift+Enter` 换行。头顶气泡立即出现。
 
-### 让队友听到你说话
+### 语音朗读
+
+⚙ 设置 → **引擎** 选 **SAPI** 或 **AI 引擎**。
+
+- **SAPI**：系统语音直接能用。`语音 / 语言` 下拉选 Huihui (zh-CN) / Zira / David 等；更多语音在 Windows 设置 → 时间和语言 → 语音 → 管理语音里加
+- **AI 引擎**：首次使用点"下载模型"（~85 MB 自动下到 `%APPDATA%\vrctext\models\`），完成后即可用；不再需要时点"删除已下载模型"回收空间
+
+点 **🔈 试听** 不用发送就能预听。
+
+### 路由到 VRChat 麦克风
 
 需要一条虚拟音频线缆（Windows 不自带）：
 
 1. 装 [**VB-Audio Virtual Cable**](https://vb-audio.com/Cable/)（免费）
-2. VRCText → ⚙ 设置 → **输出设备** 选 `CABLE Input`，打开 🔊
+2. VRCText → ⚙ → **输出设备** 选 `CABLE Input`，打开 🔊
 3. VRChat → 麦克风输入 选 `CABLE Output`
 4. （可选）`CABLE Output` 属性 → 聆听 → 勾选"聆听此设备"，自己也能听到
-
-不装线缆时 🔊 只会从你默认扬声器出声，队友听不到——任何同类 TTS 工具都得这样。
-
-### 选不同语音
-
-⚙ → **语音 / 语言** 下拉。Windows 10/11 默认有 Huihui (zh-CN)、Zira / David (en-US)；想加更多：Windows 设置 → 时间和语言 → 语音 → 管理语音。
-
-点 **🔈 试听** 不用发送就能预听。
 
 ### 历史记录
 
@@ -78,13 +81,14 @@
 
 ---
 
-## 配置文件位置
+## 配置 / 数据文件位置
 
 ```
-%APPDATA%\vrctext\vrctext\config\config.toml
+%APPDATA%\vrctext\vrctext\config\config.toml    # 设置
+%APPDATA%\vrctext\vrctext\data\models\          # AI 模型（按需下载）
 ```
 
-删除该文件即可重置为默认。
+删除对应文件即可重置或回收空间。
 
 ---
 
@@ -93,6 +97,7 @@
 - **Windows only**（用了 SAPI / WaveOut / winsock）
 - 不自带虚拟音频线缆（见上）
 - 未签名 `.exe`，SmartScreen 会提示（无害，可跳过）
+- AI 引擎首次使用需联网下载模型
 
 ---
 
