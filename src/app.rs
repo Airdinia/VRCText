@@ -527,17 +527,26 @@ impl VRCTextApp {
                     .stroke(egui::Stroke::new(1.0, theme::BORDER)),
             )
             .show(ctx, |ui| {
-                // Framed multiline input
+                // Framed multiline input. We deliberately avoid
+                // `ui.add_sized(...)` here — forcing an outer rect on a
+                // TextEdit stretches the hit-test region past the internal
+                // text layout, and clicks that land in the stretched gap
+                // get clamped to the end of the text instead of mapping to
+                // the glyph under the cursor. Letting TextEdit size itself
+                // via `desired_rows` keeps click → caret accurate.
                 theme::input_frame().show(ui, |ui| {
                     let edit = egui::TextEdit::multiline(&mut self.text)
                         .id(composer_edit_id())
                         .desired_width(f32::INFINITY)
                         .desired_rows(2)
                         .hint_text(
-                            "输入消息  ·  [Enter] 发送  ·  [Shift+Enter] 换行",
+                            egui::RichText::new(
+                                "输入消息  ·  [Enter] 发送  ·  [Shift+Enter] 换行",
+                            )
+                            .color(theme::TEXT_WEAK),
                         )
                         .frame(false);
-                    let response = ui.add_sized([ui.available_width(), 52.0], edit);
+                    let response = ui.add(edit);
                     if !self.focus_requested {
                         response.request_focus();
                         self.focus_requested = true;
