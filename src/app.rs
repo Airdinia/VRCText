@@ -1,10 +1,9 @@
-use crate::config::{self, Config, HistoryEntry};
+use crate::config::Config;
 use crate::osc;
 use crate::theme;
-use crate::tts::{
-    TtsDevice, TtsEngine, DEFAULT_DEVICE_LABEL, DEFAULT_VOICE_LABEL, DEVICE_DEFAULT,
-};
+use crate::tts::{Choice, TtsEngine};
 
+use chrono::{DateTime, Datelike, Local, TimeZone};
 use eframe::egui;
 use std::net::{SocketAddr, UdpSocket};
 use std::time::{Duration, Instant};
@@ -44,8 +43,8 @@ pub struct VRCTextApp {
     hold: Option<HoldState>,
     clear_confirm_at: Option<Instant>,
     tts: TtsEngine,
-    tts_devices: Vec<TtsDevice>,
-    tts_voices: Vec<String>,
+    tts_devices: Vec<Choice>,
+    tts_voices: Vec<Choice>,
 }
 
 impl VRCTextApp {
@@ -81,16 +80,12 @@ impl VRCTextApp {
             tts_voices: Vec::new(),
         };
         let mut cfg_dirty = false;
-        let resolved_device = app
-            .tts
-            .apply_device_by_name(app.config.tts_device_name.as_deref());
+        let resolved_device = app.tts.apply_device(app.config.tts_device_name.as_deref());
         if resolved_device.as_deref() != app.config.tts_device_name.as_deref() {
             app.config.tts_device_name = resolved_device;
             cfg_dirty = true;
         }
-        let resolved_voice = app
-            .tts
-            .apply_voice_by_name(app.config.tts_voice_name.as_deref());
+        let resolved_voice = app.tts.apply_voice(app.config.tts_voice_name.as_deref());
         if resolved_voice.as_deref() != app.config.tts_voice_name.as_deref() {
             app.config.tts_voice_name = resolved_voice;
             cfg_dirty = true;
@@ -121,31 +116,33 @@ impl VRCTextApp {
         Ok(())
     }
 
-    fn send_message(&mut self) {
-        let trimmed = self.text.trim();
-        if trimmed.is_empty() {
-            return;
-        }
-        let msg: String = trimmed.chars().take(MAX_CHARS).collect();
-
+    /// Unified send/resend pipeline: OSC → TTS → history.
+    /// `ok_label` is the status text shown when OSC succeeds.
+    fn dispatch(&mut self, msg: String, ok_label: &'static str) {
         let osc_result = self.try_send_osc(&msg);
         if self.config.tts_enabled {
             self.tts.speak(&msg);
         }
         self.config.push_history(msg);
         self.config.save();
+
+        self.set_status(match (osc_result, self.config.tts_enabled) {
+            (Ok(()), _) => ok_label,
+            (Err(_), true) => "OSC 失败，仅朗读",
+            (Err(e), false) => e,
+        });
+    }
+
+    fn send_message(&mut self) {
+        let trimmed = self.text.trim();
+        if trimmed.is_empty() {
+            return;
+        }
+        let msg: String = trimmed.chars().take(MAX_CHARS).collect();
         self.text.clear();
         self.prev_text.clear();
         self.history_cursor = None;
-
-        self.set_status(match (osc_result, self.config.tts_enabled) {
-            (Ok(()), _) => "已发送",
-            (Err(e), true) => {
-                let _ = e;
-                "OSC 失败，仅朗读"
-            }
-            (Err(e), false) => e,
-        });
+        self.dispatch(msg, "已发送");
     }
 
     fn direct_resend(&mut self, index: usize) {
@@ -154,19 +151,7 @@ impl VRCTextApp {
         if msg.is_empty() {
             return;
         }
-
-        let osc_result = self.try_send_osc(&msg);
-        if self.config.tts_enabled {
-            self.tts.speak(&msg);
-        }
-        self.config.push_history(msg);
-        self.config.save();
-
-        self.set_status(match (osc_result, self.config.tts_enabled) {
-            (Ok(()), _) => "已重发",
-            (Err(_), true) => "OSC 失败，仅朗读",
-            (Err(e), false) => e,
-        });
+        self.dispatch(msg, "已重发");
     }
 
     fn append_to_input(&mut self, index: usize) {
@@ -257,14 +242,7 @@ impl VRCTextApp {
     }
 
     fn draw_history(&mut self, ui: &mut egui::Ui) {
-        let entries: Vec<(String, i64)> = self
-            .config
-            .history
-            .iter()
-            .map(|e| (e.text.clone(), e.ts))
-            .collect();
-
-        if entries.is_empty() {
+        if self.config.history.is_empty() {
             ui.add_space(40.0);
             ui.vertical_centered(|ui| {
                 ui.label(
@@ -282,18 +260,21 @@ impl VRCTextApp {
             return;
         }
 
-        let active_hold_idx = self.hold.as_ref().map(|h| h.index);
-        let hold_progress = self.hold.as_ref().map(|h| {
-            (h.started.elapsed().as_secs_f32() / LONG_PRESS.as_secs_f32()).clamp(0.0, 1.0)
+        let now = Local::now();
+        let hold_snapshot = self.hold.as_ref().map(|h| RowHold {
+            index: h.index,
+            fired: h.fired,
+            progress: (h.started.elapsed().as_secs_f32() / LONG_PRESS.as_secs_f32())
+                .clamp(0.0, 1.0),
         });
-        let hold_fired = self.hold.as_ref().map(|h| h.fired).unwrap_or(false);
 
         let mut actions: Vec<RowAction> = Vec::new();
-
-        for (idx, (text, ts)) in entries.iter().enumerate() {
-            let is_active = active_hold_idx == Some(idx);
-            let progress = if is_active { hold_progress.unwrap_or(0.0) } else { 0.0 };
-            if let Some(a) = render_row(ui, idx, text, *ts, is_active, hold_fired, progress) {
+        for (idx, entry) in self.config.history.iter().enumerate() {
+            let hold = match hold_snapshot {
+                Some(ref h) if h.index == idx => Some(h),
+                _ => None,
+            };
+            if let Some(a) = render_row(ui, idx, &entry.text, entry.ts, now, hold) {
                 actions.push(a);
             }
             ui.add_space(2.0);
@@ -382,8 +363,13 @@ impl eframe::App for VRCTextApp {
 
         self.update_hold(ctx);
 
-        let need_animation = self.typing_active || self.status.is_some() || self.hold.is_some();
-        if need_animation {
+        // Typing indicator is driven by a separate UDP heartbeat and does not
+        // need per-frame repaints; only fade-out status and hold progress do.
+        let status_fading = self
+            .status
+            .as_ref()
+            .map_or(false, |(_, at)| at.elapsed() < STATUS_FADE);
+        if status_fading || self.hold.is_some() {
             ctx.request_repaint_after(Duration::from_millis(33));
         }
     }
@@ -433,8 +419,8 @@ impl VRCTextApp {
                                 self.port_input = self.config.port.to_string();
                                 self.show_settings = !self.show_settings;
                                 if self.show_settings {
-                                    self.tts_devices = self.tts.list_devices();
-                                    self.tts_voices = self.tts.list_voice_names();
+                                    self.tts_devices = self.tts.device_choices();
+                                    self.tts_voices = self.tts.voice_choices();
                                 }
                             }
 
@@ -553,17 +539,10 @@ impl VRCTextApp {
                     }
 
                     ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                        // Accent-colored send button
-                        let send = egui::Button::new(
-                            egui::RichText::new("发送  ⏎")
-                                .color(egui::Color32::WHITE)
-                                .size(13.0)
-                                .strong(),
-                        )
-                        .fill(theme::ACCENT)
-                        .rounding(egui::Rounding::same(theme::ROUNDING_MD))
-                        .min_size(egui::vec2(96.0, 30.0));
-                        if ui.add(send).clicked() {
+                        if ui
+                            .add(theme::accent_button("发送  ⏎", egui::vec2(96.0, 30.0)))
+                            .clicked()
+                        {
                             self.send_message();
                         }
                     });
@@ -601,14 +580,7 @@ impl VRCTextApp {
                     });
                 ui.add_space(4.0);
                 ui.horizontal(|ui| {
-                    let save = egui::Button::new(
-                        egui::RichText::new("保存")
-                            .color(egui::Color32::WHITE)
-                            .strong(),
-                    )
-                    .fill(theme::ACCENT)
-                    .rounding(egui::Rounding::same(theme::ROUNDING_MD))
-                    .min_size(egui::vec2(72.0, 28.0));
+                    let save = theme::accent_button("保存", egui::vec2(72.0, 28.0));
                     if ui.add(save).clicked() {
                         let ip_ok = self.ip_input.parse::<std::net::IpAddr>().is_ok();
                         let port_ok = self.port_input.parse::<u16>().ok();
@@ -644,105 +616,43 @@ impl VRCTextApp {
                             .color(theme::DANGER),
                     );
                 } else {
+                    let mut device_pick: Option<Option<String>> = None;
+                    let mut voice_pick: Option<Option<String>> = None;
                     egui::Grid::new("voice_grid")
                         .num_columns(2)
                         .spacing([10.0, 8.0])
                         .show(ui, |ui| {
-                            // Device
                             ui.label(label_text("输出设备"));
-                            let current_label: String = self
-                                .config
-                                .tts_device_name
-                                .clone()
-                                .unwrap_or_else(|| DEFAULT_DEVICE_LABEL.to_string());
-                            let mut selected_name: Option<String> =
-                                self.config.tts_device_name.clone();
-                            let mut changed = false;
-                            ui.horizontal(|ui| {
-                                egui::ComboBox::from_id_salt("tts_device_combo")
-                                    .selected_text(&current_label)
-                                    .width(200.0)
-                                    .show_ui(ui, |ui| {
-                                        for device in &self.tts_devices {
-                                            let this_name = if device.id == DEVICE_DEFAULT {
-                                                None
-                                            } else {
-                                                Some(device.name.clone())
-                                            };
-                                            let is_selected = selected_name == this_name;
-                                            if ui
-                                                .selectable_label(is_selected, &device.name)
-                                                .clicked()
-                                                && !is_selected
-                                            {
-                                                selected_name = this_name;
-                                                changed = true;
-                                            }
-                                        }
-                                    });
-                            });
+                            device_pick = choice_combo(
+                                ui,
+                                "tts_device_combo",
+                                self.config.tts_device_name.as_deref(),
+                                &self.tts_devices,
+                            );
                             ui.end_row();
 
-                            // Voice
                             ui.label(label_text("语音 / 语言"));
-                            let voice_current: String = self
-                                .config
-                                .tts_voice_name
-                                .clone()
-                                .unwrap_or_else(|| DEFAULT_VOICE_LABEL.to_string());
-                            let mut selected_voice: Option<String> =
-                                self.config.tts_voice_name.clone();
-                            let mut voice_changed = false;
-                            ui.horizontal(|ui| {
-                                egui::ComboBox::from_id_salt("tts_voice_combo")
-                                    .selected_text(&voice_current)
-                                    .width(200.0)
-                                    .show_ui(ui, |ui| {
-                                        if ui
-                                            .selectable_label(
-                                                selected_voice.is_none(),
-                                                DEFAULT_VOICE_LABEL,
-                                            )
-                                            .clicked()
-                                            && selected_voice.is_some()
-                                        {
-                                            selected_voice = None;
-                                            voice_changed = true;
-                                        }
-                                        for voice_name in &self.tts_voices {
-                                            let this = Some(voice_name.clone());
-                                            let is_selected = selected_voice == this;
-                                            if ui
-                                                .selectable_label(is_selected, voice_name)
-                                                .clicked()
-                                                && !is_selected
-                                            {
-                                                selected_voice = this;
-                                                voice_changed = true;
-                                            }
-                                        }
-                                    });
-                            });
+                            voice_pick = choice_combo(
+                                ui,
+                                "tts_voice_combo",
+                                self.config.tts_voice_name.as_deref(),
+                                &self.tts_voices,
+                            );
                             ui.end_row();
-
-                            // Apply device/voice changes
-                            if changed {
-                                let applied = self
-                                    .tts
-                                    .apply_device_by_name(selected_name.as_deref());
-                                self.config.tts_device_name = applied;
-                                self.config.save();
-                                self.set_status("TTS 输出设备已切换");
-                            }
-                            if voice_changed {
-                                let applied = self
-                                    .tts
-                                    .apply_voice_by_name(selected_voice.as_deref());
-                                self.config.tts_voice_name = applied;
-                                self.config.save();
-                                self.set_status("TTS 语音已切换");
-                            }
                         });
+
+                    if let Some(new_key) = device_pick {
+                        let applied = self.tts.apply_device(new_key.as_deref());
+                        self.config.tts_device_name = applied;
+                        self.config.save();
+                        self.set_status("TTS 输出设备已切换");
+                    }
+                    if let Some(new_key) = voice_pick {
+                        let applied = self.tts.apply_voice(new_key.as_deref());
+                        self.config.tts_voice_name = applied;
+                        self.config.save();
+                        self.set_status("TTS 语音已切换");
+                    }
 
                     ui.add_space(4.0);
                     ui.horizontal(|ui| {
@@ -758,8 +668,8 @@ impl VRCTextApp {
                             .on_hover_text("重新扫描音频设备和语音")
                             .clicked()
                         {
-                            self.tts_devices = self.tts.list_devices();
-                            self.tts_voices = self.tts.list_voice_names();
+                            self.tts_devices = self.tts.device_choices();
+                            self.tts_voices = self.tts.voice_choices();
                         }
                     });
 
@@ -900,15 +810,59 @@ fn label_text(text: &str) -> egui::RichText {
         .color(theme::TEXT_SECONDARY)
 }
 
+/// Render a single-select ComboBox over `Choice` items. Returns the picked
+/// key wrapped in `Some(Option<String>)` when the user changed the selection
+/// (inner `None` means "系统默认"); returns `None` when nothing changed.
+fn choice_combo(
+    ui: &mut egui::Ui,
+    id: &str,
+    current_key: Option<&str>,
+    items: &[Choice],
+) -> Option<Option<String>> {
+    let selected_label = items
+        .iter()
+        .find(|c| c.key.as_deref() == current_key)
+        .map(|c| c.label.as_str())
+        .unwrap_or("—");
+    let mut picked: Option<Option<String>> = None;
+    ui.horizontal(|ui| {
+        egui::ComboBox::from_id_salt(id)
+            .selected_text(selected_label)
+            .width(200.0)
+            .show_ui(ui, |ui| {
+                for choice in items {
+                    let is_selected = choice.key.as_deref() == current_key;
+                    if ui
+                        .selectable_label(is_selected, &choice.label)
+                        .clicked()
+                        && !is_selected
+                    {
+                        picked = Some(choice.key.clone());
+                    }
+                }
+            });
+    });
+    picked
+}
+
+struct RowHold {
+    index: usize,
+    fired: bool,
+    progress: f32,
+}
+
 fn render_row(
     ui: &mut egui::Ui,
     idx: usize,
     text: &str,
     ts: i64,
-    is_active_hold: bool,
-    hold_fired: bool,
-    progress: f32,
+    now: DateTime<Local>,
+    hold: Option<&RowHold>,
 ) -> Option<RowAction> {
+    let is_active_hold = hold.is_some();
+    let hold_fired = hold.map(|h| h.fired).unwrap_or(false);
+    let progress = hold.map(|h| h.progress).unwrap_or(0.0);
+
     let row_id = egui::Id::new(("vrctext_row_hover", idx));
     let prev_hover = ui
         .ctx()
@@ -938,7 +892,7 @@ fn render_row(
                 ui.add_sized(
                     [78.0, 20.0],
                     egui::Label::new(
-                        egui::RichText::new(format_timestamp(ts))
+                        egui::RichText::new(format_timestamp(ts, now))
                             .size(11.0)
                             .color(theme::TEXT_WEAK),
                     ),
@@ -1015,22 +969,20 @@ fn render_row(
         .response;
 
     let now_hover = row_resp.contains_pointer();
-    ui.ctx()
-        .memory_mut(|m| m.data.insert_temp(row_id, now_hover));
     if now_hover != prev_hover {
+        ui.ctx()
+            .memory_mut(|m| m.data.insert_temp(row_id, now_hover));
         ui.ctx().request_repaint();
     }
 
     action
 }
 
-fn format_timestamp(ts: i64) -> String {
+fn format_timestamp(ts: i64, now: DateTime<Local>) -> String {
     if ts <= 0 {
         return "—".into();
     }
-    use chrono::{Local, TimeZone};
     let Some(dt) = Local.timestamp_opt(ts, 0).single() else { return "—".into(); };
-    let now = Local::now();
     let diff = now.signed_duration_since(dt);
     let secs = diff.num_seconds();
     if (-60..60).contains(&secs) {
@@ -1054,9 +1006,6 @@ fn format_timestamp(ts: i64) -> String {
     }
     dt.format("%Y-%m-%d %H:%M").to_string()
 }
-
-// Bring Datelike into scope for year() used above.
-use chrono::Datelike;
 
 fn setup_cjk_fonts(ctx: &egui::Context) {
     let mut fonts = egui::FontDefinitions::default();
@@ -1082,12 +1031,6 @@ fn setup_cjk_fonts(ctx: &egui::Context) {
         }
     }
     ctx.set_fonts(fonts);
-}
-
-// Keep config module referenced so `HistoryEntry` type isn't pruned when unused.
-#[allow(dead_code)]
-fn _type_check() -> HistoryEntry {
-    HistoryEntry { text: String::new(), ts: config::now_ts() }
 }
 
 /// Disable Windows' "UDP connection reset on ICMP unreachable" behavior so

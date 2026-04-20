@@ -3,7 +3,6 @@ use serde::{Deserialize, Serialize};
 use std::collections::VecDeque;
 use std::fs;
 use std::path::PathBuf;
-use std::time::{SystemTime, UNIX_EPOCH};
 
 pub const HISTORY_CAP: usize = 50;
 
@@ -50,10 +49,7 @@ fn config_path() -> Option<PathBuf> {
 }
 
 pub fn now_ts() -> i64 {
-    SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .map(|d| d.as_secs() as i64)
-        .unwrap_or(0)
+    chrono::Utc::now().timestamp()
 }
 
 impl Config {

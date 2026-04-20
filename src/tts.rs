@@ -3,10 +3,6 @@ use std::os::windows::ffi::OsStringExt;
 
 use windows::core::{Interface, PCWSTR, PWSTR};
 use windows::Win32::Media::Audio::{waveOutGetDevCapsW, waveOutGetNumDevs, WAVEOUTCAPSW};
-
-const MMSYSERR_NOERROR: u32 = 0;
-const SPCAT_VOICES: &str = r"HKEY_LOCAL_MACHINE\SOFTWARE\Microsoft\Speech\Voices";
-
 use windows::Win32::Media::Speech::{
     ISpMMSysAudio, ISpObjectToken, ISpObjectTokenCategory, ISpVoice, SpMMAudioOut,
     SpObjectTokenCategory, SpVoice, SPF_ASYNC, SPF_PURGEBEFORESPEAK,
@@ -15,19 +11,22 @@ use windows::Win32::System::Com::{
     CoCreateInstance, CoInitializeEx, CoTaskMemFree, CLSCTX_ALL, COINIT_APARTMENTTHREADED,
 };
 
-pub const DEVICE_DEFAULT: u32 = u32::MAX;
-pub const DEFAULT_DEVICE_LABEL: &str = "系统默认";
-pub const DEFAULT_VOICE_LABEL: &str = "系统默认";
+const MMSYSERR_NOERROR: u32 = 0;
+const DEVICE_DEFAULT: u32 = u32::MAX;
+const DEFAULT_LABEL: &str = "系统默认";
+const SPCAT_VOICES: &str = r"HKEY_LOCAL_MACHINE\SOFTWARE\Microsoft\Speech\Voices";
 
+/// A selectable item (audio device or voice) rendered in the settings UI.
+/// `key = None` means "system default" — the sentinel is kept entirely inside
+/// this module so callers never see `u32::MAX` or re-implement the default row.
 #[derive(Clone, Debug)]
-pub struct TtsDevice {
-    pub id: u32,
-    pub name: String,
+pub struct Choice {
+    pub label: String,
+    pub key: Option<String>,
 }
 
 pub struct TtsEngine {
     voice: Option<ISpVoice>,
-    current_name: Option<String>,
 }
 
 impl TtsEngine {
@@ -35,10 +34,7 @@ impl TtsEngine {
         unsafe {
             let _ = CoInitializeEx(None, COINIT_APARTMENTTHREADED);
             let voice = CoCreateInstance::<_, ISpVoice>(&SpVoice, None, CLSCTX_ALL).ok();
-            Self {
-                voice,
-                current_name: None,
-            }
+            Self { voice }
         }
     }
 
@@ -70,110 +66,115 @@ impl TtsEngine {
         }
     }
 
-    pub fn list_devices(&self) -> Vec<TtsDevice> {
-        let mut out = vec![TtsDevice {
-            id: DEVICE_DEFAULT,
-            name: DEFAULT_DEVICE_LABEL.into(),
+    pub fn device_choices(&self) -> Vec<Choice> {
+        let mut out = vec![Choice {
+            label: DEFAULT_LABEL.into(),
+            key: None,
         }];
-        unsafe {
-            let n = waveOutGetNumDevs();
-            for i in 0..n {
-                let mut caps: WAVEOUTCAPSW = std::mem::zeroed();
-                let res = waveOutGetDevCapsW(
-                    i as usize,
-                    &mut caps,
-                    std::mem::size_of::<WAVEOUTCAPSW>() as u32,
-                );
-                if res != MMSYSERR_NOERROR {
-                    continue;
-                }
-                let pname: [u16; 32] = std::ptr::addr_of!(caps.szPname).read_unaligned();
-                let len = pname.iter().position(|&c| c == 0).unwrap_or(pname.len());
-                let name = OsString::from_wide(&pname[..len])
-                    .to_string_lossy()
-                    .into_owned();
-                if name.is_empty() {
-                    continue;
-                }
-                out.push(TtsDevice { id: i, name });
-            }
+        for (_, name) in enumerate_wave_out() {
+            out.push(Choice {
+                label: name.clone(),
+                key: Some(name),
+            });
         }
         out
     }
 
-    /// Apply a device by user-visible name. `None` or an unmatched name ⇒ system default.
-    /// Returns the name that ended up active (None = default).
-    pub fn apply_device_by_name(&mut self, name: Option<&str>) -> Option<String> {
-        let devices = self.list_devices();
-        let chosen = name
-            .and_then(|n| devices.iter().find(|d| d.name == n && d.id != DEVICE_DEFAULT))
-            .cloned()
-            .unwrap_or_else(|| devices[0].clone());
-
-        if self.set_device(chosen.id) {
-            if chosen.id == DEVICE_DEFAULT {
-                self.current_name = None;
-                None
-            } else {
-                self.current_name = Some(chosen.name.clone());
-                Some(chosen.name)
-            }
-        } else {
-            self.current_name = None;
-            None
+    pub fn voice_choices(&self) -> Vec<Choice> {
+        let mut out = vec![Choice {
+            label: DEFAULT_LABEL.into(),
+            key: None,
+        }];
+        for (name, _) in enum_voice_tokens() {
+            out.push(Choice {
+                label: name.clone(),
+                key: Some(name),
+            });
         }
+        out
     }
 
-    pub fn list_voice_names(&self) -> Vec<String> {
-        enum_voice_tokens()
-            .into_iter()
-            .map(|(name, _)| name)
-            .collect()
+    /// Apply a device by persisted key; returns the key that ended up active
+    /// (None = default). An unmatched key falls back to default.
+    pub fn apply_device(&mut self, key: Option<&str>) -> Option<String> {
+        let Some(voice) = &self.voice else { return None; };
+        if let Some(want) = key {
+            if let Some((id, name)) = enumerate_wave_out()
+                .into_iter()
+                .find(|(_, name)| name == want)
+            {
+                if set_voice_output(voice, id) {
+                    return Some(name);
+                }
+            }
+        }
+        let _ = unsafe { voice.SetOutput(None, true) };
+        None
     }
 
-    /// Apply a voice by its description. `None` or unmatched name ⇒ SAPI default voice.
-    /// Returns the name that ended up active (None = default).
-    pub fn apply_voice_by_name(&mut self, name: Option<&str>) -> Option<String> {
+    /// Apply a voice by persisted key; returns the key that ended up active
+    /// (None = default). An unmatched key falls back to default.
+    pub fn apply_voice(&mut self, key: Option<&str>) -> Option<String> {
         let Some(voice) = &self.voice else { return None; };
         unsafe {
-            let Some(target) = name else {
-                let _ = voice.SetVoice(None);
-                return None;
-            };
-            for (token_name, token) in enum_voice_tokens() {
-                if token_name == target {
-                    if voice.SetVoice(&token).is_ok() {
+            if let Some(want) = key {
+                for (token_name, token) in enum_voice_tokens() {
+                    if token_name == want && voice.SetVoice(&token).is_ok() {
                         return Some(token_name);
                     }
-                    break;
                 }
             }
             let _ = voice.SetVoice(None);
             None
         }
     }
+}
 
-    fn set_device(&mut self, device_id: u32) -> bool {
-        let Some(voice) = &self.voice else { return false; };
-        unsafe {
-            if device_id == DEVICE_DEFAULT {
-                return voice.SetOutput(None, true).is_ok();
+fn set_voice_output(voice: &ISpVoice, device_id: u32) -> bool {
+    unsafe {
+        if device_id == DEVICE_DEFAULT {
+            return voice.SetOutput(None, true).is_ok();
+        }
+        let audio: ISpMMSysAudio = match CoCreateInstance(&SpMMAudioOut, None, CLSCTX_ALL) {
+            Ok(a) => a,
+            Err(_) => return false,
+        };
+        if audio.SetDeviceId(device_id).is_err() {
+            return false;
+        }
+        let unk: windows::core::IUnknown = match audio.cast() {
+            Ok(u) => u,
+            Err(_) => return false,
+        };
+        voice.SetOutput(&unk, true).is_ok()
+    }
+}
+
+fn enumerate_wave_out() -> Vec<(u32, String)> {
+    let mut out = Vec::new();
+    unsafe {
+        let n = waveOutGetNumDevs();
+        for i in 0..n {
+            let mut caps: WAVEOUTCAPSW = std::mem::zeroed();
+            let res = waveOutGetDevCapsW(
+                i as usize,
+                &mut caps,
+                std::mem::size_of::<WAVEOUTCAPSW>() as u32,
+            );
+            if res != MMSYSERR_NOERROR {
+                continue;
             }
-            let audio: ISpMMSysAudio =
-                match CoCreateInstance(&SpMMAudioOut, None, CLSCTX_ALL) {
-                    Ok(a) => a,
-                    Err(_) => return false,
-                };
-            if audio.SetDeviceId(device_id).is_err() {
-                return false;
+            let pname: [u16; 32] = std::ptr::addr_of!(caps.szPname).read_unaligned();
+            let len = pname.iter().position(|&c| c == 0).unwrap_or(pname.len());
+            let name = OsString::from_wide(&pname[..len])
+                .to_string_lossy()
+                .into_owned();
+            if !name.is_empty() {
+                out.push((i, name));
             }
-            let unk: windows::core::IUnknown = match audio.cast() {
-                Ok(u) => u,
-                Err(_) => return false,
-            };
-            voice.SetOutput(&unk, true).is_ok()
         }
     }
+    out
 }
 
 fn enum_voice_tokens() -> Vec<(String, ISpObjectToken)> {
@@ -210,10 +211,9 @@ fn enum_voice_tokens() -> Vec<(String, ISpObjectToken)> {
                 Ok(p) => pwstr_to_string_and_free(p),
                 Err(_) => continue,
             };
-            if desc.is_empty() {
-                continue;
+            if !desc.is_empty() {
+                out.push((desc, token));
             }
-            out.push((desc, token));
         }
     }
     out

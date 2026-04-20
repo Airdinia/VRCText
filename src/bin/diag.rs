@@ -5,7 +5,7 @@ use std::{thread, time::Duration};
 use windows::core::{Interface, PCWSTR};
 use windows::Win32::Media::Audio::{waveOutGetDevCapsW, waveOutGetNumDevs, WAVEOUTCAPSW};
 use windows::Win32::Media::Speech::{
-    ISpMMSysAudio, ISpVoice, SpMMAudioOut, SpVoice, SPF_ASYNC, SPF_PURGEBEFORESPEAK,
+    ISpMMSysAudio, ISpVoice, SpMMAudioOut, SpVoice, SPF_PURGEBEFORESPEAK,
 };
 use windows::Win32::System::Com::{
     CoCreateInstance, CoInitializeEx, CLSCTX_ALL, COINIT_APARTMENTTHREADED,

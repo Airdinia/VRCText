@@ -111,3 +111,16 @@ pub fn input_frame() -> egui::Frame {
         .rounding(Rounding::same(ROUNDING_MD))
         .inner_margin(Margin::symmetric(12.0, 10.0))
 }
+
+/// The primary-action button style (filled with accent, white text). Used for
+/// "发送", "保存", etc.
+pub fn accent_button(text: &str, min_size: egui::Vec2) -> egui::Button<'_> {
+    egui::Button::new(
+        egui::RichText::new(text)
+            .color(Color32::WHITE)
+            .strong(),
+    )
+    .fill(ACCENT)
+    .rounding(Rounding::same(ROUNDING_MD))
+    .min_size(min_size)
+}
