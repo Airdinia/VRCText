@@ -154,16 +154,36 @@ impl VRCTextApp {
         self.dispatch(msg, "已重发");
     }
 
-    fn append_to_input(&mut self, index: usize) {
-        let Some(entry) = self.config.history.get(index) else { return; };
-        if self.text.is_empty() {
-            self.text = entry.text.clone();
+    fn append_to_input(&mut self, ctx: &egui::Context, index: usize) {
+        let Some(entry) = self.config.history.get(index).cloned() else { return; };
+        let insert = entry.text;
+        let id = composer_edit_id();
+
+        if let Some(mut state) = egui::TextEdit::load_state(ctx, id) {
+            let range = state
+                .cursor
+                .char_range()
+                .unwrap_or_else(|| {
+                    let end = self.text.chars().count();
+                    egui::text::CCursorRange::one(egui::text::CCursor::new(end))
+                });
+            let total = self.text.chars().count();
+            let start = range.primary.index.min(range.secondary.index).min(total);
+            let end = range.primary.index.max(range.secondary.index).min(total);
+
+            let before: String = self.text.chars().take(start).collect();
+            let after: String = self.text.chars().skip(end).collect();
+            self.text = before + &insert + &after;
+
+            let new_pos = start + insert.chars().count();
+            state.cursor.set_char_range(Some(egui::text::CCursorRange::one(
+                egui::text::CCursor::new(new_pos),
+            )));
+            state.store(ctx, id);
         } else {
-            if !self.text.ends_with(' ') && !self.text.ends_with('\n') {
-                self.text.push(' ');
-            }
-            self.text.push_str(&entry.text);
+            self.text.push_str(&insert);
         }
+
         self.prev_text = self.text.clone();
         self.history_cursor = None;
         self.focus_requested = false;
@@ -282,7 +302,7 @@ impl VRCTextApp {
 
         for a in actions {
             match a {
-                RowAction::Append(i) => self.append_to_input(i),
+                RowAction::Append(i) => self.append_to_input(ui.ctx(), i),
                 RowAction::StartHold(i) => {
                     self.hold = Some(HoldState {
                         index: i,
@@ -500,6 +520,7 @@ impl VRCTextApp {
                 // Framed multiline input
                 theme::input_frame().show(ui, |ui| {
                     let edit = egui::TextEdit::multiline(&mut self.text)
+                        .id(composer_edit_id())
                         .desired_width(f32::INFINITY)
                         .desired_rows(2)
                         .hint_text(
@@ -759,6 +780,10 @@ impl VRCTextApp {
                 ui.add_space(8.0);
             });
     }
+}
+
+fn composer_edit_id() -> egui::Id {
+    egui::Id::new("vrctext_composer_edit")
 }
 
 fn status_chip(ui: &mut egui::Ui, dot: egui::Color32, text: impl Into<String>) {
