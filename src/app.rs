@@ -2,11 +2,14 @@ use crate::config::{Config, Engine};
 use crate::download::ModelDownloader;
 use crate::osc;
 use crate::theme;
-use crate::tts::{Choice, SapiEngine, SherpaEngine, TtsEngine};
+use crate::tts::{
+    load_sherpa_async, Choice, LoadedSherpa, LoadingEngine, SapiEngine, SherpaEngine, TtsEngine,
+};
 
 use chrono::{DateTime, Datelike, Local, TimeZone};
 use eframe::egui;
 use std::net::{SocketAddr, UdpSocket};
+use std::sync::mpsc::{Receiver, TryRecvError};
 use std::time::{Duration, Instant};
 
 const MAX_CHARS: usize = 144;
@@ -48,6 +51,10 @@ pub struct VRCTextApp {
     tts_devices: Vec<Choice>,
     tts_voices: Vec<Choice>,
     model_downloader: Option<ModelDownloader>,
+    /// Active receiver when Sherpa is loading on a worker thread. Dropped
+    /// as soon as the result is consumed (or when the user switches away
+    /// from Sherpa and we no longer care about the outcome).
+    sherpa_loader: Option<Receiver<Result<LoadedSherpa, String>>>,
 }
 
 impl VRCTextApp {
@@ -61,7 +68,7 @@ impl VRCTextApp {
         let now = Instant::now();
         let ip_input = config.ip.clone();
         let port_input = config.port.to_string();
-        let tts = build_engine(config.engine);
+        let (tts, sherpa_loader) = boot_engine(&config);
         let mut app = Self {
             text: String::new(),
             config,
@@ -84,20 +91,14 @@ impl VRCTextApp {
             tts_devices: Vec::new(),
             tts_voices: Vec::new(),
             model_downloader: None,
+            sherpa_loader,
         };
-        let mut cfg_dirty = false;
-        let resolved_device = app.tts.apply_device(app.config.current_device());
-        if resolved_device.as_deref() != app.config.current_device() {
-            app.config.set_current_device(resolved_device);
-            cfg_dirty = true;
-        }
-        let resolved_voice = app.tts.apply_voice(app.config.current_voice());
-        if resolved_voice.as_deref() != app.config.current_voice() {
-            app.config.set_current_voice(resolved_voice);
-            cfg_dirty = true;
-        }
-        if cfg_dirty {
-            app.config.save();
+        // When a loader is running, the current `tts` is the `LoadingEngine`
+        // stub — applying device/voice against it is a no-op and would
+        // clobber saved settings with `None`. The async-load finisher does
+        // the apply once the real engine is in place.
+        if app.sherpa_loader.is_none() {
+            app.apply_saved_audio_settings();
         }
         app
     }
@@ -341,6 +342,7 @@ impl eframe::App for VRCTextApp {
     fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
         self.apply_window_level(ctx);
         self.poll_downloader(ctx);
+        self.poll_sherpa_loader(ctx);
 
         let enter_send = ctx.input_mut(|i| {
             i.consume_key(egui::Modifiers::NONE, egui::Key::Enter)
@@ -849,6 +851,62 @@ impl VRCTextApp {
             });
     }
 
+    /// Apply the user's saved device + voice to whatever engine is currently
+    /// live, persisting any fallback the engine chose (e.g. when the saved
+    /// device has been unplugged since last run).
+    fn apply_saved_audio_settings(&mut self) {
+        let mut cfg_dirty = false;
+        let resolved_device = self.tts.apply_device(self.config.current_device());
+        if resolved_device.as_deref() != self.config.current_device() {
+            self.config.set_current_device(resolved_device);
+            cfg_dirty = true;
+        }
+        let resolved_voice = self.tts.apply_voice(self.config.current_voice());
+        if resolved_voice.as_deref() != self.config.current_voice() {
+            self.config.set_current_voice(resolved_voice);
+            cfg_dirty = true;
+        }
+        if cfg_dirty {
+            self.config.save();
+        }
+    }
+
+    /// Drain the Sherpa loader channel once per frame. When the worker
+    /// returns a model, promote it to a real `SherpaEngine` on the UI
+    /// thread (cpal streams must be built here, not on the worker).
+    fn poll_sherpa_loader(&mut self, ctx: &egui::Context) {
+        let Some(rx) = &self.sherpa_loader else {
+            return;
+        };
+        match rx.try_recv() {
+            Ok(Ok(loaded)) => {
+                let engine = SherpaEngine::from_loaded(loaded, self.config.current_device());
+                self.tts = Box::new(engine);
+                self.sherpa_loader = None;
+                self.tts_devices = self.tts.device_choices();
+                self.tts_voices = self.tts.voice_choices();
+                self.apply_saved_audio_settings();
+                self.set_status("AI 引擎已就绪");
+            }
+            Ok(Err(_msg)) => {
+                // Fall back to a synchronous construction so the engine's
+                // own init_error surfaces the real failure state to the UI.
+                self.tts = Box::new(SherpaEngine::new());
+                self.sherpa_loader = None;
+                self.tts_devices = self.tts.device_choices();
+                self.tts_voices = self.tts.voice_choices();
+            }
+            Err(TryRecvError::Empty) => {
+                // Keep repainting so the user sees the loading state even
+                // while they're not interacting with the window.
+                ctx.request_repaint_after(Duration::from_millis(100));
+            }
+            Err(TryRecvError::Disconnected) => {
+                self.sherpa_loader = None;
+            }
+        }
+    }
+
     /// Erase everything under `%APPDATA%\vrctext\models\` and rebuild the
     /// current engine. If config wanted Sherpa, it comes back unavailable
     /// and the download button reappears — which is what the user asked for.
@@ -867,6 +925,9 @@ impl VRCTextApp {
         // in-flight synth thread's callback sees a cancelled counter.
         self.tts.stop();
         self.tts = Box::new(SapiEngine::new());
+        // Any in-flight Sherpa load is about to be looking at files we're
+        // deleting — drop its channel so we ignore whatever comes back.
+        self.sherpa_loader = None;
         match std::fs::remove_dir_all(&dir) {
             Ok(()) => self.set_status("已删除本地 AI 模型"),
             Err(e) if e.kind() == std::io::ErrorKind::NotFound => {}
@@ -876,7 +937,10 @@ impl VRCTextApp {
                 // clear the AI state even if a stray file blocked us.
             }
         }
-        self.tts = build_engine(self.config.engine);
+        // Models are gone now, so boot_engine returns the synchronous
+        // "未检测到 AI 模型" state (no loader spawned).
+        let (tts, _loader) = boot_engine(&self.config);
+        self.tts = tts;
         self.tts_devices = self.tts.device_choices();
         self.tts_voices = self.tts.voice_choices();
     }
@@ -916,14 +980,17 @@ impl VRCTextApp {
             return;
         }
         self.model_downloader = None;
-        self.tts = build_engine(self.config.engine);
+        let (tts, loader) = boot_engine(&self.config);
+        self.tts = tts;
+        self.sherpa_loader = loader;
         self.tts_voices = self.tts.voice_choices();
         self.tts_devices = self.tts.device_choices();
-        let _ = self.tts.apply_device(self.config.current_device());
-        let applied_voice = self.tts.apply_voice(self.config.current_voice());
-        if applied_voice.as_deref() != self.config.current_voice() {
-            self.config.set_current_voice(applied_voice);
-            self.config.save();
+        // If the Sherpa path is async (normal case after a successful
+        // download), `poll_sherpa_loader` applies saved device/voice once
+        // the worker thread returns. Only touch settings here for the
+        // synchronous branches (SAPI or the rare Sherpa-no-models case).
+        if self.sherpa_loader.is_none() {
+            self.apply_saved_audio_settings();
         }
         self.set_status("AI 模型已就绪");
     }
@@ -1047,12 +1114,20 @@ impl VRCTextApp {
             return;
         }
         self.tts.stop();
-        self.tts = build_engine(next);
         self.config.engine = next;
+        // `boot_engine` may hand back a LoadingEngine + async loader; for
+        // SAPI it's cheap and synchronous. In the async case the loader
+        // tick handles apply_device/apply_voice once the real engine is
+        // ready, so skip it here to avoid overwriting config with None.
+        let (tts, loader) = boot_engine(&self.config);
+        self.tts = tts;
+        self.sherpa_loader = loader;
         self.tts_devices = self.tts.device_choices();
         self.tts_voices = self.tts.voice_choices();
-        let _ = self.tts.apply_device(self.config.current_device());
-        let _ = self.tts.apply_voice(self.config.current_voice());
+        if self.sherpa_loader.is_none() {
+            let _ = self.tts.apply_device(self.config.current_device());
+            let _ = self.tts.apply_voice(self.config.current_voice());
+        }
         self.config.save();
         self.set_status(match next {
             Engine::Sapi => "已切换到 SAPI",
@@ -1072,10 +1147,25 @@ fn models_present() -> bool {
     }
 }
 
-fn build_engine(kind: Engine) -> Box<dyn TtsEngine> {
-    match kind {
-        Engine::Sapi => Box::new(SapiEngine::new()),
-        Engine::Sherpa => Box::new(SherpaEngine::new()),
+/// Construct the engine the config asks for, moving any slow work to a
+/// worker thread. SAPI is cheap to build so it returns fully-formed; the
+/// Sherpa path returns a `LoadingEngine` placeholder plus a channel the
+/// UI polls each frame to swap in the real model once ONNX finishes
+/// loading. Callers that don't want async should use `build_engine`.
+fn boot_engine(config: &Config) -> (Box<dyn TtsEngine>, Option<Receiver<Result<LoadedSherpa, String>>>) {
+    match config.engine {
+        Engine::Sapi => (Box::new(SapiEngine::new()), None),
+        Engine::Sherpa => {
+            // If models aren't installed we want the "未检测到 AI 模型" +
+            // download-button UI to appear immediately, not a spinner that
+            // will never resolve. Defer the background loader until we know
+            // there's actually something to load.
+            if models_present() {
+                (Box::new(LoadingEngine), Some(load_sherpa_async()))
+            } else {
+                (Box::new(SherpaEngine::new()), None)
+            }
+        }
     }
 }
 

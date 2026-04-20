@@ -3,6 +3,7 @@ use std::ffi::OsString;
 use std::os::windows::ffi::OsStringExt;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::mpsc::{channel, Receiver};
 use std::sync::{Arc, Mutex};
 use std::thread;
 
@@ -158,6 +159,65 @@ impl TtsEngine for SapiEngine {
     }
 }
 
+/// Transient engine used while the real `SherpaEngine` is being built on a
+/// background thread. Keeps the app responsive during the ~1–2 s it takes
+/// to load the ONNX acoustic model + vocoder; the UI treats it like any
+/// other unavailable-with-detail engine and simply renders "加载中…".
+pub struct LoadingEngine;
+
+impl TtsEngine for LoadingEngine {
+    fn available(&self) -> bool {
+        false
+    }
+    fn speak(&mut self, _text: &str) {}
+    fn stop(&mut self) {}
+    fn device_choices(&self) -> Vec<Choice> {
+        Vec::new()
+    }
+    fn voice_choices(&self) -> Vec<Choice> {
+        Vec::new()
+    }
+    fn apply_device(&mut self, _key: Option<&str>) -> Option<String> {
+        None
+    }
+    fn apply_voice(&mut self, _key: Option<&str>) -> Option<String> {
+        None
+    }
+    fn unavailable_detail(&self) -> Option<String> {
+        Some("AI 引擎加载中…".into())
+    }
+}
+
+/// Pre-built Sherpa artifacts produced on a worker thread — the expensive
+/// `OfflineTts::create` runs off the UI thread, then the main thread wraps
+/// these into a full `SherpaEngine` with a cpal stream (which must be
+/// created on the UI thread for WASAPI on Windows).
+pub struct LoadedSherpa {
+    pub tts: Arc<OfflineTts>,
+    pub tts_sample_rate: u32,
+}
+
+/// Spawn the Sherpa model load on a worker thread and return a channel the
+/// UI thread can poll each frame.
+pub fn load_sherpa_async() -> Receiver<Result<LoadedSherpa, String>> {
+    let (tx, rx) = channel();
+    thread::spawn(move || {
+        let _ = tx.send(load_sherpa_sync());
+    });
+    rx
+}
+
+fn load_sherpa_sync() -> Result<LoadedSherpa, String> {
+    let dir = crate::config::models_dir().ok_or("无法解析模型目录")?;
+    let (tts, _) = load_matcha_auto(&dir);
+    let tts = tts.ok_or_else(|| "模型加载失败，可能是文件损坏".to_string())?;
+    let rate = tts.sample_rate() as u32;
+    Ok(LoadedSherpa {
+        tts: Arc::new(tts),
+        tts_sample_rate: rate,
+    })
+}
+
 /// sherpa-onnx-backed AI engine. Scans `%APPDATA%\vrctext\models\` for any
 /// Matcha-TTS bundle and picks the first available; if no model is present,
 /// `available()` reports false and the app's settings UI exposes a download
@@ -207,6 +267,30 @@ impl SherpaEngine {
         Self {
             tts,
             tts_sample_rate,
+            device_sample_rate,
+            device_channels,
+            buffer,
+            stream,
+            current_device: None,
+            gen_counter: Arc::new(AtomicU64::new(0)),
+            init_error,
+        }
+    }
+
+    /// Attach a pre-loaded model (built on a worker thread via
+    /// `load_sherpa_async`) and open the cpal stream on the current thread.
+    /// Must be called on the UI thread — WASAPI streams are !Send and must
+    /// be created where they're used.
+    pub fn from_loaded(loaded: LoadedSherpa, device: Option<&str>) -> Self {
+        let buffer: Arc<Mutex<VecDeque<f32>>> = Arc::new(Mutex::new(VecDeque::new()));
+        let dev = open_output_for(device, buffer.clone());
+        let (stream, device_sample_rate, device_channels, init_error) = match dev {
+            Some(d) => (Some(d.stream), d.sample_rate, d.channels, None),
+            None => (None, 48000, 2, Some("打不开默认音频输出设备".into())),
+        };
+        Self {
+            tts: Some(loaded.tts),
+            tts_sample_rate: loaded.tts_sample_rate,
             device_sample_rate,
             device_channels,
             buffer,
