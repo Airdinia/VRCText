@@ -476,17 +476,18 @@ impl VRCTextApp {
                             );
                             ui.add_space(6.0);
 
-                            // TTS toggle (disabled if engine unavailable)
-                            let tts_avail = self.tts.available();
-                            let tts_tip: &str = if !tts_avail {
-                                engine_unavailable_msg(self.config.engine)
-                            } else {
-                                match self.config.engine {
+                            // TTS toggle — hidden entirely while the engine
+                            // is unavailable (Sherpa still loading, or SAPI
+                            // somehow dropped) so the two buttons to its
+                            // left shift right to fill the gap instead of
+                            // leaving a half-dead grayed-out slot. User can
+                            // still manage engine state via the settings
+                            // cogwheel next to it.
+                            if self.tts.available() {
+                                let tts_tip = match self.config.engine {
                                     Engine::Sapi => "语音朗读 (SAPI)",
                                     Engine::Sherpa => "语音朗读 (AI)",
-                                }
-                            };
-                            ui.add_enabled_ui(tts_avail, |ui| {
+                                };
                                 let r = icon_button(ui, "🔊", self.config.tts_enabled, tts_tip);
                                 if r.clicked() {
                                     self.config.tts_enabled = !self.config.tts_enabled;
@@ -497,7 +498,7 @@ impl VRCTextApp {
                                     }
                                     self.config.save();
                                 }
-                            });
+                            }
 
                             let r = icon_button(
                                 ui,
