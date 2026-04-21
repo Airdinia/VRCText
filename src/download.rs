@@ -2,7 +2,7 @@
 //!
 //! Two packs are currently exposed:
 //!   • Matcha zh-baker    — 中文单音色，~85 MB（含通用 vocos 声码器）
-//!   • Kokoro multi-lang  — 中英多音色，~720 MB（单个 pack 自带所有依赖）
+//!   • Kokoro multi-lang  — 中英多音色，~350 MB（全精度 v1.1，自带所有依赖）
 //!
 //! Packs are extracted into `%APPDATA%\vrctext\models\` and discovered by the
 //! TTS layer on startup. The UI thread polls `DownloadState` each frame.
@@ -29,6 +29,9 @@ pub enum ModelKind {
 }
 
 impl ModelKind {
+    pub const ALL: &'static [ModelKind] =
+        &[ModelKind::MatchaZhBaker, ModelKind::KokoroMultiLang];
+
     pub fn display_name(self) -> &'static str {
         match self {
             ModelKind::MatchaZhBaker => "Matcha 中文（baker）",
@@ -40,6 +43,40 @@ impl ModelKind {
         match self {
             ModelKind::MatchaZhBaker => "~85 MB",
             ModelKind::KokoroMultiLang => "~350 MB",
+        }
+    }
+
+    /// Directory under `models_dir/` where this pack unpacks. Also the
+    /// `VoicePack::name` surfaced to the voice combo.
+    pub fn pack_dir(self) -> &'static str {
+        match self {
+            ModelKind::MatchaZhBaker => "matcha-icefall-zh-baker",
+            ModelKind::KokoroMultiLang => "kokoro-multi-lang-v1_1",
+        }
+    }
+
+    /// True when `models_dir` contains a usable copy of this pack — every
+    /// required file is on disk. Used both by the downloader (to skip
+    /// re-fetching) and the TTS layer (to gate voice discovery).
+    pub fn is_installed(self, models_dir: &Path) -> bool {
+        let d = models_dir.join(self.pack_dir());
+        match self {
+            ModelKind::MatchaZhBaker => {
+                let acoustic = ["model-steps-3.onnx", "model-steps-6.onnx"]
+                    .iter()
+                    .any(|n| d.join(n).exists());
+                acoustic
+                    && d.join("tokens.txt").exists()
+                    && models_dir.join("vocos-22khz-univ.onnx").exists()
+            }
+            ModelKind::KokoroMultiLang => {
+                let model =
+                    d.join("model.onnx").exists() || d.join("model.int8.onnx").exists();
+                model
+                    && d.join("voices.bin").exists()
+                    && d.join("tokens.txt").exists()
+                    && d.join("espeak-ng-data").is_dir()
+            }
         }
     }
 }
@@ -106,8 +143,7 @@ fn run_matcha(models_dir: &Path, state: &Arc<Mutex<DownloadState>>) -> Result<()
     set_status(state, "解压…", 0.9);
     extract(&tmp, models_dir)?;
     let _ = std::fs::remove_file(&tmp);
-    verify_matcha(models_dir)?;
-    Ok(())
+    verify_post_extract(ModelKind::MatchaZhBaker, models_dir)
 }
 
 fn run_kokoro(models_dir: &Path, state: &Arc<Mutex<DownloadState>>) -> Result<(), String> {
@@ -117,48 +153,17 @@ fn run_kokoro(models_dir: &Path, state: &Arc<Mutex<DownloadState>>) -> Result<()
     set_status(state, "解压（文件较多，请耐心等待）…", 0.9);
     extract(&tmp, models_dir)?;
     let _ = std::fs::remove_file(&tmp);
-    verify_kokoro(models_dir)?;
-    Ok(())
+    verify_post_extract(ModelKind::KokoroMultiLang, models_dir)
 }
 
-fn verify_matcha(models_dir: &Path) -> Result<(), String> {
-    let voice_dir = models_dir.join("matcha-icefall-zh-baker");
-    let acoustic_ok = ["model-steps-3.onnx", "model-steps-6.onnx"]
-        .iter()
-        .any(|n| voice_dir.join(n).exists());
-    let tokens_ok = voice_dir.join("tokens.txt").exists();
-    let vocoder_ok = models_dir.join("vocos-22khz-univ.onnx").exists();
-    if acoustic_ok && tokens_ok && vocoder_ok {
+fn verify_post_extract(kind: ModelKind, models_dir: &Path) -> Result<(), String> {
+    if kind.is_installed(models_dir) {
         return Ok(());
     }
     Err(format!(
-        "解压完成但关键文件缺失: acoustic={} tokens={} vocoder={}。",
-        check(acoustic_ok),
-        check(tokens_ok),
-        check(vocoder_ok),
+        "解压完成但 {} 的关键文件缺失，请打开模型目录检查。",
+        kind.display_name()
     ))
-}
-
-fn verify_kokoro(models_dir: &Path) -> Result<(), String> {
-    let d = models_dir.join("kokoro-multi-lang-v1_1");
-    let model_ok = d.join("model.onnx").exists() || d.join("model.int8.onnx").exists();
-    let voices_ok = d.join("voices.bin").exists();
-    let tokens_ok = d.join("tokens.txt").exists();
-    let data_ok = d.join("espeak-ng-data").is_dir();
-    if model_ok && voices_ok && tokens_ok && data_ok {
-        return Ok(());
-    }
-    Err(format!(
-        "解压完成但关键文件缺失: model={} voices={} tokens={} espeak={}。",
-        check(model_ok),
-        check(voices_ok),
-        check(tokens_ok),
-        check(data_ok),
-    ))
-}
-
-fn check(b: bool) -> &'static str {
-    if b { "✔" } else { "✘" }
 }
 
 fn set_status(state: &Arc<Mutex<DownloadState>>, msg: &str, progress: f32) {
@@ -213,12 +218,9 @@ fn extract(archive: &Path, dest: &Path) -> Result<(), String> {
 /// Which packs are already present under `models_dir`. Used by the UI to
 /// hide redundant "下载 X" buttons.
 pub fn installed_kinds(models_dir: &Path) -> Vec<ModelKind> {
-    let mut out = Vec::new();
-    if verify_matcha(models_dir).is_ok() {
-        out.push(ModelKind::MatchaZhBaker);
-    }
-    if verify_kokoro(models_dir).is_ok() {
-        out.push(ModelKind::KokoroMultiLang);
-    }
-    out
+    ModelKind::ALL
+        .iter()
+        .copied()
+        .filter(|k| k.is_installed(models_dir))
+        .collect()
 }

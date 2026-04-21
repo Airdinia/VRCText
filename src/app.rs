@@ -354,7 +354,11 @@ impl eframe::App for VRCTextApp {
         // Desktop, ...) uses — neither winit's IME events nor egui's
         // text-buffer snapshots are reliable across MS Pinyin, TSF,
         // and WM_CHAR injection paths; IMM32 is the common denominator.
-        let ime_composing = is_ime_composing(frame);
+        //
+        // Only query when something is actually focused — saves three
+        // Win32 syscalls per frame on the settings page / cold idle.
+        let ime_composing = ctx.memory(|m| m.focused().is_some())
+            && is_ime_composing(frame);
         let enter_send = ctx.input_mut(|i| {
             let pressed = i.consume_key(egui::Modifiers::NONE, egui::Key::Enter);
             pressed && !ime_composing
