@@ -47,12 +47,6 @@ pub struct VRCTextApp {
     hold: Option<HoldState>,
     clear_confirm_at: Option<Instant>,
     delete_models_confirm_at: Option<Instant>,
-    /// Frames remaining during which Enter is "owned" by the IME (i.e. the
-    /// user is committing a composition candidate). On Windows, the IME
-    /// Commit event and the Enter key press sometimes land in *different*
-    /// egui frames — a same-frame check alone lets the Enter slip through
-    /// and we end up sending a half-typed message. 3 frames @ 60fps ≈ 50ms.
-    ime_cooldown_frames: u32,
     tts: Box<dyn TtsEngine>,
     tts_devices: Vec<Choice>,
     tts_voices: Vec<Choice>,
@@ -93,7 +87,6 @@ impl VRCTextApp {
             hold: None,
             clear_confirm_at: None,
             delete_models_confirm_at: None,
-            ime_cooldown_frames: 0,
             tts,
             tts_devices: Vec::new(),
             tts_voices: Vec::new(),
@@ -346,39 +339,26 @@ impl VRCTextApp {
 }
 
 impl eframe::App for VRCTextApp {
-    fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
+    fn update(&mut self, ctx: &egui::Context, frame: &mut eframe::Frame) {
         self.apply_window_level(ctx);
         self.poll_downloader(ctx);
         self.poll_sherpa_loader(ctx);
 
-        // Chinese / Japanese IMEs use Enter to commit the current
-        // composition candidate. On Windows, the IME Commit event and the
-        // raw Enter keystroke sometimes arrive in *different* egui update
-        // ticks (winit batches window messages with some latency). A pure
-        // same-frame check lets the Enter slip through after the IME event
-        // already fired, and we'd incorrectly send the half-typed message.
-        //
-        // Strategy: whenever *any* IME event shows up this frame, arm a
-        // short cooldown (a few frames ≈ 50 ms). While armed, Enter is
-        // treated as "belongs to IME" and discarded. The window is tight
-        // enough that a fast typist deliberately pressing Enter after
-        // space-commit (>100 ms typical) still sends correctly.
-        let had_ime_event = ctx.input(|i| {
-            i.events.iter().any(|e| matches!(e, egui::Event::Ime(_)))
-        });
-        if had_ime_event {
-            self.ime_cooldown_frames = 3;
-        }
-        let ime_guarding = self.ime_cooldown_frames > 0;
+        // Enter = send, but never while the IME is actively composing —
+        // otherwise pressing Enter to commit a pinyin candidate would
+        // also fire off the half-typed message. The authoritative check
+        // for "composition in progress" is the Win32 call
+        // `ImmGetCompositionStringW(himc, GCS_COMPSTR, null, 0)`, which
+        // returns the byte length of the current preedit string. This
+        // is what every native Windows chat app (WeChat, QQ, Telegram
+        // Desktop, ...) uses — neither winit's IME events nor egui's
+        // text-buffer snapshots are reliable across MS Pinyin, TSF,
+        // and WM_CHAR injection paths; IMM32 is the common denominator.
+        let ime_composing = is_ime_composing(frame);
         let enter_send = ctx.input_mut(|i| {
-            // Consume either way so egui doesn't forward Enter elsewhere
-            // when it's really an IME commit.
             let pressed = i.consume_key(egui::Modifiers::NONE, egui::Key::Enter);
-            pressed && !ime_guarding
+            pressed && !ime_composing
         });
-        if self.ime_cooldown_frames > 0 {
-            self.ime_cooldown_frames -= 1;
-        }
         let hist_up = ctx.input_mut(|i| {
             self.text.is_empty()
                 && i.consume_key(egui::Modifiers::NONE, egui::Key::ArrowUp)
@@ -1619,5 +1599,35 @@ fn disable_udp_connreset(socket: &UdpSocket) {
             None,
             None,
         );
+    }
+}
+
+/// Ask Windows IMM32 whether the current input context has an active
+/// composition string (i.e. the IME is holding pre-commit characters).
+/// Any non-zero `GCS_COMPSTR` length means the user is mid-composition and
+/// Enter belongs to the IME. Returns false if we can't resolve an HWND or
+/// the IMM calls fail — fall through to normal send behavior in that case.
+fn is_ime_composing(frame: &eframe::Frame) -> bool {
+    use raw_window_handle::{HasWindowHandle, RawWindowHandle};
+    use windows::Win32::Foundation::HWND;
+    use windows::Win32::UI::Input::Ime::{
+        ImmGetCompositionStringW, ImmGetContext, ImmReleaseContext, GCS_COMPSTR,
+    };
+
+    let Ok(wh) = frame.window_handle() else { return false; };
+    let hwnd = match wh.as_raw() {
+        RawWindowHandle::Win32(h) => HWND(h.hwnd.get() as *mut _),
+        _ => return false,
+    };
+    unsafe {
+        let himc = ImmGetContext(hwnd);
+        if himc.0.is_null() {
+            return false;
+        }
+        // Passing a null buffer with size 0 returns the required byte count
+        // of the composition string (or 0 when there's no composition).
+        let size = ImmGetCompositionStringW(himc, GCS_COMPSTR, None, 0);
+        let _ = ImmReleaseContext(hwnd, himc);
+        size > 0
     }
 }

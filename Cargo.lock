@@ -2507,6 +2507,7 @@ dependencies = [
  "cpal",
  "directories",
  "eframe",
+ "raw-window-handle",
  "rosc",
  "serde",
  "sherpa-onnx",

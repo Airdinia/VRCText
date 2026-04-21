@@ -16,6 +16,7 @@ cpal = "0.16"
 ureq = "2"
 tar = "0.4"
 bzip2 = "0.4"
+raw-window-handle = "0.6"
 windows = { version = "0.58", features = [
     "Win32_Foundation",
     "Win32_System_Com",
@@ -24,6 +25,7 @@ windows = { version = "0.58", features = [
     "Win32_Networking_WinSock",
     "Win32_System_IO",
     "Win32_UI_HiDpi",
+    "Win32_UI_Input_Ime",
 ] }
 
 [profile.release]
