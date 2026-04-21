@@ -1,5 +1,5 @@
 use crate::config::{Config, Engine};
-use crate::download::ModelDownloader;
+use crate::download::{installed_kinds, ModelDownloader, ModelKind};
 use crate::osc;
 use crate::theme;
 use crate::tts::{
@@ -47,6 +47,12 @@ pub struct VRCTextApp {
     hold: Option<HoldState>,
     clear_confirm_at: Option<Instant>,
     delete_models_confirm_at: Option<Instant>,
+    /// Frames remaining during which Enter is "owned" by the IME (i.e. the
+    /// user is committing a composition candidate). On Windows, the IME
+    /// Commit event and the Enter key press sometimes land in *different*
+    /// egui frames — a same-frame check alone lets the Enter slip through
+    /// and we end up sending a half-typed message. 3 frames @ 60fps ≈ 50ms.
+    ime_cooldown_frames: u32,
     tts: Box<dyn TtsEngine>,
     tts_devices: Vec<Choice>,
     tts_voices: Vec<Choice>,
@@ -87,6 +93,7 @@ impl VRCTextApp {
             hold: None,
             clear_confirm_at: None,
             delete_models_confirm_at: None,
+            ime_cooldown_frames: 0,
             tts,
             tts_devices: Vec::new(),
             tts_voices: Vec::new(),
@@ -344,9 +351,34 @@ impl eframe::App for VRCTextApp {
         self.poll_downloader(ctx);
         self.poll_sherpa_loader(ctx);
 
-        let enter_send = ctx.input_mut(|i| {
-            i.consume_key(egui::Modifiers::NONE, egui::Key::Enter)
+        // Chinese / Japanese IMEs use Enter to commit the current
+        // composition candidate. On Windows, the IME Commit event and the
+        // raw Enter keystroke sometimes arrive in *different* egui update
+        // ticks (winit batches window messages with some latency). A pure
+        // same-frame check lets the Enter slip through after the IME event
+        // already fired, and we'd incorrectly send the half-typed message.
+        //
+        // Strategy: whenever *any* IME event shows up this frame, arm a
+        // short cooldown (a few frames ≈ 50 ms). While armed, Enter is
+        // treated as "belongs to IME" and discarded. The window is tight
+        // enough that a fast typist deliberately pressing Enter after
+        // space-commit (>100 ms typical) still sends correctly.
+        let had_ime_event = ctx.input(|i| {
+            i.events.iter().any(|e| matches!(e, egui::Event::Ime(_)))
         });
+        if had_ime_event {
+            self.ime_cooldown_frames = 3;
+        }
+        let ime_guarding = self.ime_cooldown_frames > 0;
+        let enter_send = ctx.input_mut(|i| {
+            // Consume either way so egui doesn't forward Enter elsewhere
+            // when it's really an IME commit.
+            let pressed = i.consume_key(egui::Modifiers::NONE, egui::Key::Enter);
+            pressed && !ime_guarding
+        });
+        if self.ime_cooldown_frames > 0 {
+            self.ime_cooldown_frames -= 1;
+        }
         let hist_up = ctx.input_mut(|i| {
             self.text.is_empty()
                 && i.consume_key(egui::Modifiers::NONE, egui::Key::ArrowUp)
@@ -616,19 +648,26 @@ impl VRCTextApp {
                     .num_columns(2)
                     .spacing([10.0, 8.0])
                     .show(ui, |ui| {
+                        // Don't wrap these in `ui.add_sized([w, h], ...)`.
+                        // Forcing a taller-than-natural rect on a single-
+                        // line TextEdit pins the text to the top of the
+                        // box instead of centering it — the same pitfall
+                        // that bit the composer's caret-on-click. Let the
+                        // widget size itself vertically; width is fixed
+                        // via `desired_width`.
                         ui.label(label_text("IP 地址"));
-                        ui.add_sized(
-                            [200.0, 24.0],
+                        ui.add(
                             egui::TextEdit::singleline(&mut self.ip_input)
-                                .font(egui::TextStyle::Monospace),
+                                .font(egui::TextStyle::Monospace)
+                                .desired_width(200.0),
                         );
                         ui.end_row();
 
                         ui.label(label_text("端口"));
-                        ui.add_sized(
-                            [200.0, 24.0],
+                        ui.add(
                             egui::TextEdit::singleline(&mut self.port_input)
-                                .font(egui::TextStyle::Monospace),
+                                .font(egui::TextStyle::Monospace)
+                                .desired_width(200.0),
                         );
                         ui.end_row();
                     });
@@ -772,6 +811,48 @@ impl VRCTextApp {
                         .size(11.0)
                         .color(theme::TEXT_WEAK),
                     );
+                }
+
+                // Let users add a second pack (e.g. Kokoro on top of Matcha)
+                // without having to first delete what they have. Shown only
+                // when the engine is up and at least one pack is still
+                // missing. During an active download we hand over to the
+                // progress UI rendered in `render_sherpa_unavailable` path.
+                if self.config.engine == Engine::Sherpa
+                    && self.tts.available()
+                    && self.model_downloader.is_none()
+                {
+                    let missing = match crate::config::models_dir() {
+                        Some(dir) => {
+                            let installed = installed_kinds(&dir);
+                            [ModelKind::MatchaZhBaker, ModelKind::KokoroMultiLang]
+                                .into_iter()
+                                .any(|k| !installed.contains(&k))
+                        }
+                        None => false,
+                    };
+                    if missing {
+                        ui.add_space(8.0);
+                        ui.label(
+                            egui::RichText::new("添加更多语音包")
+                                .size(11.0)
+                                .color(theme::TEXT_WEAK),
+                        );
+                        ui.add_space(4.0);
+                        self.render_download_buttons(ui);
+                    }
+                }
+
+                // While a download is running *and* the engine is already
+                // up (Matcha present, user added Kokoro on top), show
+                // progress inline. When the engine isn't available yet the
+                // !available branch above already rendered the same
+                // progress UI — so we must not render it a second time.
+                if self.tts.available() && self.model_downloader.is_some() {
+                    ui.add_space(8.0);
+                    ui.separator();
+                    ui.add_space(6.0);
+                    self.render_sherpa_unavailable(ui);
                 }
 
                 // Delete-downloaded-models lives inside the AI card regardless
@@ -945,18 +1026,18 @@ impl VRCTextApp {
         self.tts_voices = self.tts.voice_choices();
     }
 
-    /// Kick off a background download of the default Matcha Chinese bundle
-    /// into `%APPDATA%\vrctext\models\`. The worker thread updates its
+    /// Kick off a background download of the given pack into
+    /// `%APPDATA%\vrctext\models\`. The worker thread updates its
     /// `DownloadState` in place; `poll_downloader` observes progress each
     /// frame and triggers engine reload on completion.
-    fn start_model_download(&mut self) {
+    fn start_model_download(&mut self, kind: ModelKind) {
         if self.model_downloader.is_some() {
             return;
         }
         match crate::config::models_dir() {
             Some(dir) => {
-                self.model_downloader = Some(ModelDownloader::start(dir));
-                self.set_status("开始下载模型…");
+                self.model_downloader = Some(ModelDownloader::start(kind, dir));
+                self.set_status(&format!("开始下载 {}…", kind.display_name()));
             }
             None => self.set_status("无法解析模型目录"),
         }
@@ -1032,57 +1113,76 @@ impl VRCTextApp {
     }
 
     fn render_sherpa_unavailable(&mut self, ui: &mut egui::Ui) {
-        let snapshot = self.model_downloader.as_ref().map(|d| d.snapshot());
+        let snapshot = self.model_downloader.as_ref().map(|d| (d.kind, d.snapshot()));
         match snapshot {
             None => {
-                // Two distinct failure modes land here: (a) no files at all,
-                // and (b) files present but engine failed to start. Showing
-                // the download button in (b) is a lie — the user just did
-                // that and it didn't work; they need the real reason.
-                match self.tts.unavailable_detail() {
-                    Some(detail) => {
-                        ui.label(
-                            egui::RichText::new("AI 引擎启动失败")
-                                .color(theme::DANGER),
-                        );
+                // Three modes land here, distinguished below:
+                //   1. a background loader is mid-flight → "加载中…" spinner
+                //      (LoadingEngine returns detail text but it's NOT a
+                //      failure; painting it red would be misleading UX)
+                //   2. files exist but the engine failed to start → red error
+                //   3. no files at all → neutral prompt + download buttons
+                if self.sherpa_loader.is_some() {
+                    ui.horizontal(|ui| {
+                        ui.spinner();
                         ui.add_space(4.0);
                         ui.label(
-                            egui::RichText::new(detail)
+                            egui::RichText::new("AI 引擎加载中…")
+                                .color(theme::TEXT_SECONDARY),
+                        );
+                    });
+                    ui.add_space(2.0);
+                    ui.label(
+                        egui::RichText::new(
+                            "模型正在后台加载，完成后会自动切换。",
+                        )
+                        .size(11.0)
+                        .color(theme::TEXT_WEAK),
+                    );
+                } else {
+                    match self.tts.unavailable_detail() {
+                        Some(detail) => {
+                            ui.label(
+                                egui::RichText::new("AI 引擎启动失败")
+                                    .color(theme::DANGER),
+                            );
+                            ui.add_space(4.0);
+                            ui.label(
+                                egui::RichText::new(detail)
+                                    .size(11.0)
+                                    .color(theme::TEXT_WEAK),
+                            );
+                            ui.add_space(4.0);
+                            ui.label(
+                                egui::RichText::new(
+                                    "可尝试点下方\"删除已下载模型\"然后重新下载。",
+                                )
                                 .size(11.0)
                                 .color(theme::TEXT_WEAK),
-                        );
-                        ui.add_space(4.0);
-                        ui.label(
-                            egui::RichText::new(
-                                "可尝试点下方\"删除已下载模型\"然后重新下载。",
-                            )
-                            .size(11.0)
-                            .color(theme::TEXT_WEAK),
-                        );
-                    }
-                    None => {
-                        ui.label(
-                            egui::RichText::new("未检测到 AI 模型")
-                                .color(theme::WARNING),
-                        );
-                        ui.add_space(4.0);
-                        ui.label(
-                            egui::RichText::new(
-                                "下载 Matcha 中文模型 + 声码器，共约 85 MB；\
-                                 将保存到 %APPDATA%\\vrctext\\models\\。",
-                            )
-                            .size(11.0)
-                            .color(theme::TEXT_WEAK),
-                        );
-                        ui.add_space(6.0);
-                        if ui.button("下载模型").clicked() {
-                            self.start_model_download();
+                            );
+                        }
+                        None => {
+                            ui.label(
+                                egui::RichText::new("未检测到 AI 模型")
+                                    .color(theme::WARNING),
+                            );
+                            ui.add_space(4.0);
+                            ui.label(
+                                egui::RichText::new(
+                                    "下载一个语音模型包到 %APPDATA%\\vrctext\\models\\。\
+                                     Matcha 体积小但仅中文；Kokoro 大得多，支持中英混读。",
+                                )
+                                .size(11.0)
+                                .color(theme::TEXT_WEAK),
+                            );
+                            ui.add_space(6.0);
+                            self.render_download_buttons(ui);
                         }
                     }
                 }
             }
-            Some(state) => {
-                ui.label(&state.status);
+            Some((kind, state)) => {
+                ui.label(format!("{} — {}", kind.display_name(), state.status));
                 ui.add(
                     egui::ProgressBar::new(state.progress)
                         .show_percentage()
@@ -1094,7 +1194,7 @@ impl VRCTextApp {
                     ui.horizontal(|ui| {
                         if ui.button("重试").clicked() {
                             self.model_downloader = None;
-                            self.start_model_download();
+                            self.start_model_download(kind);
                         }
                         if ui.button("取消").clicked() {
                             self.model_downloader = None;
@@ -1102,6 +1202,31 @@ impl VRCTextApp {
                     });
                 }
             }
+        }
+    }
+
+    /// Offer buttons for every pack that isn't installed yet. Called from
+    /// both the "no models" unavailable path and the available-card extras
+    /// row (so users can add Kokoro after Matcha was already downloaded).
+    fn render_download_buttons(&mut self, ui: &mut egui::Ui) {
+        let installed = match crate::config::models_dir() {
+            Some(dir) => installed_kinds(&dir),
+            None => Vec::new(),
+        };
+        let mut pick: Option<ModelKind> = None;
+        ui.horizontal_wrapped(|ui| {
+            for kind in [ModelKind::MatchaZhBaker, ModelKind::KokoroMultiLang] {
+                if installed.contains(&kind) {
+                    continue;
+                }
+                let label = format!("下载 {} ({})", kind.display_name(), kind.size_hint());
+                if ui.button(label).clicked() {
+                    pick = Some(kind);
+                }
+            }
+        });
+        if let Some(kind) = pick {
+            self.start_model_download(kind);
         }
     }
 
@@ -1161,7 +1286,8 @@ fn boot_engine(config: &Config) -> (Box<dyn TtsEngine>, Option<Receiver<Result<L
             // will never resolve. Defer the background loader until we know
             // there's actually something to load.
             if models_present() {
-                (Box::new(LoadingEngine), Some(load_sherpa_async()))
+                let preferred = config.current_voice().map(|s| s.to_string());
+                (Box::new(LoadingEngine), Some(load_sherpa_async(preferred)))
             } else {
                 (Box::new(SherpaEngine::new()), None)
             }
@@ -1172,14 +1298,14 @@ fn boot_engine(config: &Config) -> (Box<dyn TtsEngine>, Option<Receiver<Result<L
 fn engine_label(e: Engine) -> &'static str {
     match e {
         Engine::Sapi => "SAPI（系统默认）",
-        Engine::Sherpa => "AI 引擎（开发中）",
+        Engine::Sherpa => "AI 引擎（Matcha / Kokoro）",
     }
 }
 
 fn engine_unavailable_msg(e: Engine) -> &'static str {
     match e {
         Engine::Sapi => "系统 SAPI 不可用",
-        Engine::Sherpa => "AI 引擎开发中，暂不可用",
+        Engine::Sherpa => "AI 引擎未就绪（未下载模型或加载失败）",
     }
 }
 
