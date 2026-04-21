@@ -18,6 +18,19 @@ const TYPING_IDLE_OFF: Duration = Duration::from_millis(2000);
 const STATUS_FADE: Duration = Duration::from_millis(1800);
 const LONG_PRESS: Duration = Duration::from_millis(500);
 
+// Shared layout constants so header / central panel / composer / cards all
+// align on the same gutter lines. Changing one value here is enough to keep
+// every surface visually consistent.
+const PANEL_PAD_H: f32 = 14.0;
+const ROW_PAD_H: f32 = 12.0;
+const ROW_PAD_V: f32 = 7.0;
+const ROW_INNER_H: f32 = 22.0;
+const TIME_COL_W: f32 = 92.0;
+const ACTION_COL_W: f32 = 28.0;
+const COL_GAP: f32 = 8.0;
+const LABEL_COL_W: f32 = 88.0;
+const FIELD_COL_W: f32 = 220.0;
+
 struct HoldState {
     index: usize,
     started: Instant,
@@ -387,7 +400,7 @@ impl eframe::App for VRCTextApp {
             .frame(
                 egui::Frame::none()
                     .fill(theme::BG_BASE)
-                    .inner_margin(egui::Margin::symmetric(14.0, 10.0)),
+                    .inner_margin(egui::Margin::symmetric(PANEL_PAD_H, 10.0)),
             )
             .show(ctx, |ui| {
                 if self.show_settings {
@@ -435,7 +448,7 @@ impl VRCTextApp {
             .frame(
                 egui::Frame::none()
                     .fill(theme::BG_SURFACE)
-                    .inner_margin(egui::Margin::symmetric(14.0, 0.0))
+                    .inner_margin(egui::Margin::symmetric(PANEL_PAD_H, 0.0))
                     .stroke(egui::Stroke::new(1.0, theme::BORDER)),
             )
             .show(ctx, |ui| {
@@ -538,10 +551,10 @@ impl VRCTextApp {
                 egui::Frame::none()
                     .fill(theme::BG_BASE)
                     .inner_margin(egui::Margin {
-                        left: 12.0,
-                        right: 12.0,
-                        top: 10.0,
-                        bottom: 12.0,
+                        left: PANEL_PAD_H,
+                        right: PANEL_PAD_H,
+                        top: 8.0,
+                        bottom: 8.0,
                     })
                     .stroke(egui::Stroke::new(1.0, theme::BORDER)),
             )
@@ -574,9 +587,19 @@ impl VRCTextApp {
 
                 self.update_typing();
 
-                ui.add_space(8.0);
+                ui.add_space(4.0);
+
+                // Slim footer row. All three elements (char count, status,
+                // send button) share the same explicit text size so their
+                // baselines match when the horizontal layout centers them
+                // vertically — mismatched font sizes was why the count and
+                // the button looked vertically offset from each other.
+                const FOOTER_TEXT_SIZE: f32 = 12.0;
+                const FOOTER_ROW_H: f32 = 22.0;
 
                 ui.horizontal(|ui| {
+                    ui.set_min_height(FOOTER_ROW_H);
+
                     // Character count
                     let count = self.char_count();
                     let color = if count > MAX_CHARS {
@@ -588,7 +611,7 @@ impl VRCTextApp {
                     };
                     ui.label(
                         egui::RichText::new(format!("{} / {}", count, MAX_CHARS))
-                            .size(12.0)
+                            .size(FOOTER_TEXT_SIZE)
                             .color(color),
                     );
 
@@ -602,18 +625,30 @@ impl VRCTextApp {
                                     .clamp(0.0, 1.0);
                             let c = theme::TEXT_SECONDARY
                                 .gamma_multiply(alpha.max(0.4));
-                            ui.label(egui::RichText::new(msg).size(12.0).color(c));
+                            ui.label(
+                                egui::RichText::new(msg)
+                                    .size(FOOTER_TEXT_SIZE)
+                                    .color(c),
+                            );
                         }
                     }
 
                     ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                        if ui
-                            .add(theme::accent_button(
-                                "发送 [Enter]",
-                                egui::vec2(108.0, 30.0),
-                            ))
-                            .clicked()
-                        {
+                        // Shrink button_padding so the request
+                        // min_size=(96, FOOTER_ROW_H) actually governs the
+                        // button height — the default (12, 6) would push it
+                        // to ~26px tall and leave the labels visually lower.
+                        ui.spacing_mut().button_padding = egui::vec2(12.0, 3.0);
+                        let btn = egui::Button::new(
+                            egui::RichText::new("发送 [Enter]")
+                                .size(FOOTER_TEXT_SIZE)
+                                .color(egui::Color32::WHITE)
+                                .strong(),
+                        )
+                        .fill(theme::ACCENT)
+                        .rounding(egui::Rounding::same(theme::ROUNDING_MD))
+                        .min_size(egui::vec2(96.0, FOOTER_ROW_H));
+                        if ui.add(btn).clicked() {
                             self.send_message();
                         }
                     });
@@ -640,24 +675,28 @@ impl VRCTextApp {
                         // that bit the composer's caret-on-click. Let the
                         // widget size itself vertically; width is fixed
                         // via `desired_width`.
-                        ui.label(label_text("IP 地址"));
+                        grid_label(ui, "IP 地址");
                         ui.add(
                             egui::TextEdit::singleline(&mut self.ip_input)
                                 .font(egui::TextStyle::Monospace)
-                                .desired_width(200.0),
+                                .desired_width(FIELD_COL_W),
                         );
                         ui.end_row();
 
-                        ui.label(label_text("端口"));
+                        grid_label(ui, "端口");
                         ui.add(
                             egui::TextEdit::singleline(&mut self.port_input)
                                 .font(egui::TextStyle::Monospace)
-                                .desired_width(200.0),
+                                .desired_width(FIELD_COL_W),
                         );
                         ui.end_row();
                     });
                 ui.add_space(4.0);
                 ui.horizontal(|ui| {
+                    // Indent the action row so the "保存" button sits under the
+                    // field column instead of floating off-axis from the
+                    // labeled inputs above it.
+                    ui.add_space(LABEL_COL_W + 10.0);
                     let save = theme::accent_button("保存", egui::vec2(72.0, 28.0));
                     if ui.add(save).clicked() {
                         let ip_ok = self.ip_input.parse::<std::net::IpAddr>().is_ok();
@@ -696,10 +735,10 @@ impl VRCTextApp {
                     .num_columns(2)
                     .spacing([10.0, 8.0])
                     .show(ui, |ui| {
-                        ui.label(label_text("引擎"));
+                        grid_label(ui, "引擎");
                         egui::ComboBox::from_id_salt("tts_engine_combo")
                             .selected_text(engine_label(self.config.engine))
-                            .width(200.0)
+                            .width(FIELD_COL_W)
                             .show_ui(ui, |ui| {
                                 for e in [Engine::Sapi, Engine::Sherpa] {
                                     let sel = self.config.engine == e;
@@ -736,7 +775,7 @@ impl VRCTextApp {
                         .num_columns(2)
                         .spacing([10.0, 8.0])
                         .show(ui, |ui| {
-                            ui.label(label_text("输出设备"));
+                            grid_label(ui, "输出设备");
                             device_pick = choice_combo(
                                 ui,
                                 "tts_device_combo",
@@ -745,7 +784,7 @@ impl VRCTextApp {
                             );
                             ui.end_row();
 
-                            ui.label(label_text("语音 / 语言"));
+                            grid_label(ui, "语音 / 语言");
                             voice_pick = choice_combo(
                                 ui,
                                 "tts_voice_combo",
@@ -770,6 +809,7 @@ impl VRCTextApp {
 
                     ui.add_space(4.0);
                     ui.horizontal(|ui| {
+                        ui.add_space(LABEL_COL_W + 10.0);
                         if ui
                             .button("🔈 试听")
                             .on_hover_text("用当前选中语音+输出设备念一句测试")
@@ -1359,6 +1399,17 @@ fn label_text(text: &str) -> egui::RichText {
         .color(theme::TEXT_SECONDARY)
 }
 
+/// Render a settings-grid label at a fixed column width so every grid on
+/// the page lines up on the same vertical axis — the endpoint, engine, and
+/// voice grids would otherwise compute their first-column widths
+/// independently and end up visibly staggered.
+fn grid_label(ui: &mut egui::Ui, text: &str) -> egui::Response {
+    ui.add_sized(
+        [LABEL_COL_W, ROW_INNER_H],
+        egui::Label::new(label_text(text)),
+    )
+}
+
 /// Render a single-select ComboBox over `Choice` items. Returns the picked
 /// key wrapped in `Some(Option<String>)` when the user changed the selection
 /// (inner `None` means "系统默认"); returns `None` when nothing changed.
@@ -1377,7 +1428,7 @@ fn choice_combo(
     ui.horizontal(|ui| {
         egui::ComboBox::from_id_salt(id)
             .selected_text(selected_label)
-            .width(200.0)
+            .width(FIELD_COL_W)
             .show_ui(ui, |ui| {
                 for choice in items {
                     let is_selected = choice.key.as_deref() == current_key;
@@ -1421,6 +1472,10 @@ fn render_row(
 
     let mut action: Option<RowAction> = None;
 
+    // Transparent rows by default — only the hovered row gets a fill, so
+    // the list reads as plain text over the panel rather than a stack of
+    // colored cards. The frame's inner_margin still reserves space for the
+    // hover highlight without shifting the body text when the pointer moves.
     let row_fill = if highlighted {
         theme::BG_HOVER
     } else {
@@ -1430,16 +1485,19 @@ fn render_row(
     let frame = egui::Frame::none()
         .fill(row_fill)
         .rounding(egui::Rounding::same(theme::ROUNDING_MD))
-        .inner_margin(egui::Margin::symmetric(10.0, 8.0));
+        .inner_margin(egui::Margin::symmetric(ROW_PAD_H, ROW_PAD_V));
 
     let row_resp = frame
         .show(ui, |ui| {
             ui.horizontal(|ui| {
-                ui.set_min_height(22.0);
+                // Lock every child to the same inner height so the timestamp,
+                // body text, and action button share a single vertical axis.
+                ui.set_min_height(ROW_INNER_H);
 
-                // Timestamp column
+                // Timestamp column — fixed width so text columns line up
+                // between rows regardless of "刚刚" vs "2024-01-15 10:30".
                 ui.add_sized(
-                    [78.0, 20.0],
+                    [TIME_COL_W, ROW_INNER_H],
                     egui::Label::new(
                         egui::RichText::new(format_timestamp(ts, now))
                             .size(11.0)
@@ -1447,10 +1505,12 @@ fn render_row(
                     ),
                 );
 
-                ui.add_space(6.0);
+                ui.add_space(COL_GAP);
 
-                // Text column
-                let text_w = (ui.available_width() - 36.0).max(40.0);
+                // Text column — flex, leaves a fixed slot for the action
+                // button on the right. Computed width is constant whether
+                // the row is hovered or not, so the body glyphs never shift.
+                let text_w = (ui.available_width() - ACTION_COL_W - COL_GAP).max(40.0);
                 let text_label = egui::Label::new(
                     egui::RichText::new(text)
                         .size(13.0)
@@ -1458,14 +1518,25 @@ fn render_row(
                 )
                 .truncate()
                 .sense(egui::Sense::hover());
-                let text_resp = ui.add_sized([text_w, 20.0], text_label);
+                let text_resp = ui.add_sized([text_w, ROW_INNER_H], text_label);
                 if text.chars().count() > 30 {
                     text_resp.on_hover_text(text);
                 }
 
-                // Resend button slot (right)
+                ui.add_space(COL_GAP);
+
+                // Resend button slot — reserved at fixed width even when
+                // not hovered, so hovering doesn't reflow the row.
                 ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                     if highlighted {
+                        // Default button_padding (12, 6) would make the
+                        // button ~26px tall (text 14 + 12 padding), pushing
+                        // this hovered row 4px taller than its neighbors.
+                        // The list then jitters as the pointer moves between
+                        // rows. Shrink the padding so the button fits inside
+                        // ROW_INNER_H exactly and hover is geometry-neutral.
+                        ui.spacing_mut().button_padding = egui::vec2(6.0, 2.0);
+
                         let btn_fill = if is_active_hold {
                             if hold_fired {
                                 theme::SUCCESS.linear_multiply(0.25)
@@ -1476,12 +1547,12 @@ fn render_row(
                             theme::BG_ELEVATED
                         };
                         let btn = egui::Button::new(
-                            egui::RichText::new("↺").size(14.0).color(theme::TEXT_PRIMARY),
+                            egui::RichText::new("↺").size(13.0).color(theme::TEXT_PRIMARY),
                         )
                         .fill(btn_fill)
                         .rounding(egui::Rounding::same(theme::ROUNDING_MD))
                         .stroke(egui::Stroke::new(1.0, theme::BORDER_STRONG))
-                        .min_size(egui::vec2(28.0, 22.0));
+                        .min_size(egui::vec2(ACTION_COL_W, ROW_INNER_H));
                         let resp = ui.add(btn).on_hover_text(
                             "短按：添加到输入框\n长按 0.5 秒：直接重发",
                         );
@@ -1510,7 +1581,7 @@ fn render_row(
                             );
                         }
                     } else {
-                        ui.add_space(28.0);
+                        ui.add_space(ACTION_COL_W);
                     }
                 });
             });
