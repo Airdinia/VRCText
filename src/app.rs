@@ -570,7 +570,7 @@ impl VRCTextApp {
                     let edit = egui::TextEdit::multiline(&mut self.text)
                         .id(composer_edit_id())
                         .desired_width(f32::INFINITY)
-                        .desired_rows(2)
+                        .desired_rows(4)
                         .hint_text(
                             egui::RichText::new(
                                 "输入消息  ·  [Enter] 发送  ·  [Shift+Enter] 换行",
@@ -1637,18 +1637,24 @@ fn setup_cjk_fonts(ctx: &egui::Context) {
         r"C:\Windows\Fonts\simsun.ttc",
     ];
     for path in candidates {
-        if let Ok(bytes) = std::fs::read(path) {
-            fonts
-                .font_data
-                .insert("cjk".into(), egui::FontData::from_owned(bytes));
-            if let Some(fam) = fonts.families.get_mut(&egui::FontFamily::Proportional) {
-                fam.insert(0, "cjk".into());
-            }
-            if let Some(fam) = fonts.families.get_mut(&egui::FontFamily::Monospace) {
-                fam.push("cjk".into());
-            }
-            break;
+        // mmap the font instead of reading it into an owned Vec<u8>. The file
+        // is mapped read-only and leaked so the &'static slice hands off to
+        // epaint's Cow<'static, [u8]>; pages are file-backed, so Windows can
+        // evict them under memory pressure and they don't count against
+        // private commit like `fs::read` would.
+        let Ok(file) = std::fs::File::open(path) else { continue };
+        let Ok(mmap) = (unsafe { memmap2::Mmap::map(&file) }) else { continue };
+        let leaked: &'static memmap2::Mmap = Box::leak(Box::new(mmap));
+        fonts
+            .font_data
+            .insert("cjk".into(), egui::FontData::from_static(&leaked[..]));
+        if let Some(fam) = fonts.families.get_mut(&egui::FontFamily::Proportional) {
+            fam.insert(0, "cjk".into());
         }
+        if let Some(fam) = fonts.families.get_mut(&egui::FontFamily::Monospace) {
+            fam.push("cjk".into());
+        }
+        break;
     }
     ctx.set_fonts(fonts);
 }

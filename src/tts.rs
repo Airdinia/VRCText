@@ -487,7 +487,13 @@ impl TtsEngine for SherpaEngine {
         // Cancel any running synth *and* drop already-queued audio so the
         // user hears silence immediately.
         self.gen_counter.fetch_add(1, Ordering::SeqCst);
-        self.buffer.lock().unwrap().clear();
+        let mut buf = self.buffer.lock().unwrap();
+        buf.clear();
+        // A long utterance can leave capacity at a few MB; reclaim it once the
+        // user stops. Threshold keeps short-message churn from reallocating.
+        if buf.capacity() > 256 * 1024 {
+            buf.shrink_to_fit();
+        }
     }
 
     fn device_choices(&self) -> Vec<Choice> {
@@ -702,7 +708,7 @@ fn try_load_matcha(models_dir: &Path, pack_name: &str) -> Option<OfflineTts> {
     let config = OfflineTtsConfig {
         model: OfflineTtsModelConfig {
             matcha,
-            num_threads: 2,
+            num_threads: 1,
             provider: provider(),
             ..Default::default()
         },
@@ -747,7 +753,7 @@ fn try_load_kokoro(models_dir: &Path, pack_name: &str) -> Option<OfflineTts> {
     let config = OfflineTtsConfig {
         model: OfflineTtsModelConfig {
             kokoro,
-            num_threads: 2,
+            num_threads: 1,
             provider: provider(),
             ..Default::default()
         },
