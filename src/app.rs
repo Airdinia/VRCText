@@ -502,8 +502,8 @@ impl VRCTextApp {
                             // cogwheel next to it.
                             if self.tts.available() {
                                 let tts_tip = match self.config.engine {
-                                    Engine::Sapi => "语音朗读 (SAPI)",
-                                    Engine::Sherpa => "语音朗读 (AI)",
+                                    Engine::Sapi => "语音朗读 (SAPI) · 关→开 可重载音频",
+                                    Engine::Sherpa => "语音朗读 (AI) · 关→开 可重载音频",
                                 };
                                 let r = icon_button(ui, "🔊", self.config.tts_enabled, tts_tip);
                                 if r.clicked() {
@@ -511,7 +511,13 @@ impl VRCTextApp {
                                     if !self.config.tts_enabled {
                                         self.tts.stop();
                                     } else {
-                                        self.set_status("提示：需配合虚拟音频线缆");
+                                        // Re-acquire OS audio handles in case
+                                        // audiosrv was restarted while the
+                                        // engine was idle — without this the
+                                        // existing stream is silently dead.
+                                        self.tts.reload();
+                                        self.apply_saved_audio_settings();
+                                        self.set_status("已重新加载语音输出");
                                     }
                                     self.config.save();
                                 }

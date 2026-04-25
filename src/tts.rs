@@ -63,6 +63,13 @@ pub trait TtsEngine {
     fn voice_choices(&self) -> Vec<Choice>;
     fn apply_device(&mut self, key: Option<&str>) -> Option<String>;
     fn apply_voice(&mut self, key: Option<&str>) -> Option<String>;
+    /// Re-acquire the OS-level audio handle without throwing away expensive
+    /// state (the loaded ONNX model for Sherpa). Restarting Windows Audio
+    /// (`audiosrv`) leaves the existing `ISpVoice` / cpal stream silently
+    /// dead — `reload()` lets the user recover by toggling the speaker
+    /// without restarting the app. Caller is expected to re-apply saved
+    /// device/voice afterwards.
+    fn reload(&mut self) {}
     /// Human-readable reason the engine is currently unavailable — only
     /// meaningful to call when `available()` is false. Default `None`
     /// keeps SAPI quiet; Sherpa uses it to tell the user whether the
@@ -112,6 +119,16 @@ impl TtsEngine for SapiEngine {
                 SPF_PURGEBEFORESPEAK.0 as u32,
                 None,
             );
+        }
+    }
+
+    fn reload(&mut self) {
+        // Drop the old voice first so any output handle it held on the
+        // dead audiosrv session is released before we create a fresh one.
+        self.voice = None;
+        unsafe {
+            let _ = CoInitializeEx(None, COINIT_APARTMENTTHREADED);
+            self.voice = CoCreateInstance::<_, ISpVoice>(&SpVoice, None, CLSCTX_ALL).ok();
         }
     }
 
@@ -494,6 +511,17 @@ impl TtsEngine for SherpaEngine {
         if buf.capacity() > 256 * 1024 {
             buf.shrink_to_fit();
         }
+    }
+
+    fn reload(&mut self) {
+        // Cancel pending synth, drop the dead WASAPI stream, and clear any
+        // stale "device unavailable" message. The model itself stays in
+        // memory — re-loading ONNX would take seconds. The caller's
+        // follow-up apply_device rebuilds the cpal stream from scratch.
+        self.gen_counter.fetch_add(1, Ordering::SeqCst);
+        self.stream = None;
+        self.buffer.lock().unwrap().clear();
+        self.init_error = None;
     }
 
     fn device_choices(&self) -> Vec<Choice> {
