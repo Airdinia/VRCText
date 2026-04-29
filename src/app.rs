@@ -68,12 +68,8 @@ pub struct VRCTextApp {
     /// as soon as the result is consumed (or when the user switches away
     /// from Sherpa and we no longer care about the outcome).
     sherpa_loader: Option<Receiver<Result<LoadedSherpa, String>>>,
-    /// Frames remaining during which Enter is "owned" by the IME. Armed
-    /// whenever winit hands us any `egui::Event::Ime(_)` — needed for TSF
-    /// stacks (modern MS Pinyin, Google IME) where IMM32's composition
-    /// query returns 0 even with the candidate window open, so the IMM32
-    /// check alone misses pinyin commits. 3 frames @ 60fps ≈ 50ms.
     ime_cooldown_frames: u32,
+    ime_preedit_len: usize,
 }
 
 impl VRCTextApp {
@@ -112,6 +108,7 @@ impl VRCTextApp {
             model_downloader: None,
             sherpa_loader,
             ime_cooldown_frames: 0,
+            ime_preedit_len: 0,
         };
         // When a loader is running, the current `tts` is the `LoadingEngine`
         // stub — applying device/voice against it is a no-op and would
@@ -364,29 +361,34 @@ impl eframe::App for VRCTextApp {
         self.poll_downloader(ctx);
         self.poll_sherpa_loader(ctx);
 
-        // Enter = send, but never while the IME is actively composing —
-        // otherwise pressing Enter to commit a pinyin candidate would
-        // also fire off the half-typed message. Two layered signals:
-        //
-        // 1. `ImmGetCompositionStringW(himc, GCS_COMPSTR, null, 0)` —
-        //    the classic IMM32 composition-length query. Reliable for
-        //    legacy IMM-mode IMEs.
-        //
-        // 2. A short frame cooldown after any `egui::Event::Ime(_)`.
-        //    Modern Windows IMEs (MS Pinyin on Win10/11, Google IME)
-        //    run on TSF, where the IMM32 compat layer often reports
-        //    zero composition length even while the candidate window
-        //    is open — so we *also* treat Enter as IME-owned for a
-        //    few frames after winit hands us any IME event. This also
-        //    catches the case where the Commit event and the leaked
-        //    Enter keystroke land in different frames.
-        let had_ime_event = ctx.input(|i| {
-            i.events.iter().any(|e| matches!(e, egui::Event::Ime(_)))
+        // Block Enter while the IME is composing. Three layered signals;
+        // each covers a case the others miss, so don't drop any:
+        // - preedit_len: persists across long thinking pauses (TSF).
+        // - cooldown: covers the Commit→leaked-Enter cross-frame race
+        //   where preedit_len was just reset to 0.
+        // - IMM32: legacy IMM-mode IMEs that don't fire egui IME events.
+        ctx.input(|i| {
+            for e in &i.events {
+                match e {
+                    egui::Event::Ime(egui::ImeEvent::Preedit(s)) => {
+                        self.ime_preedit_len = s.chars().count();
+                    }
+                    egui::Event::Ime(
+                        egui::ImeEvent::Commit(_) | egui::ImeEvent::Disabled,
+                    ) => {
+                        self.ime_preedit_len = 0;
+                    }
+                    egui::Event::Ime(egui::ImeEvent::Enabled) => {}
+                    _ => {}
+                }
+            }
+            if i.events.iter().any(|e| matches!(e, egui::Event::Ime(_))) {
+                self.ime_cooldown_frames = 3;
+            }
         });
-        if had_ime_event {
-            self.ime_cooldown_frames = 3;
-        }
-        let ime_composing = is_ime_composing(frame) || self.ime_cooldown_frames > 0;
+        let ime_composing = self.ime_preedit_len > 0
+            || self.ime_cooldown_frames > 0
+            || is_ime_composing(frame);
         let enter_send = ctx.input_mut(|i| {
             let pressed = i.consume_key(egui::Modifiers::NONE, egui::Key::Enter);
             pressed && !ime_composing
