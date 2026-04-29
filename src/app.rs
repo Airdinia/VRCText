@@ -68,6 +68,12 @@ pub struct VRCTextApp {
     /// as soon as the result is consumed (or when the user switches away
     /// from Sherpa and we no longer care about the outcome).
     sherpa_loader: Option<Receiver<Result<LoadedSherpa, String>>>,
+    /// Frames remaining during which Enter is "owned" by the IME. Armed
+    /// whenever winit hands us any `egui::Event::Ime(_)` — needed for TSF
+    /// stacks (modern MS Pinyin, Google IME) where IMM32's composition
+    /// query returns 0 even with the candidate window open, so the IMM32
+    /// check alone misses pinyin commits. 3 frames @ 60fps ≈ 50ms.
+    ime_cooldown_frames: u32,
 }
 
 impl VRCTextApp {
@@ -105,6 +111,7 @@ impl VRCTextApp {
             tts_voices: Vec::new(),
             model_downloader: None,
             sherpa_loader,
+            ime_cooldown_frames: 0,
         };
         // When a loader is running, the current `tts` is the `LoadingEngine`
         // stub — applying device/voice against it is a no-op and would
@@ -359,20 +366,34 @@ impl eframe::App for VRCTextApp {
 
         // Enter = send, but never while the IME is actively composing —
         // otherwise pressing Enter to commit a pinyin candidate would
-        // also fire off the half-typed message. The authoritative check
-        // for "composition in progress" is the Win32 call
-        // `ImmGetCompositionStringW(himc, GCS_COMPSTR, null, 0)`, which
-        // returns the byte length of the current preedit string. This
-        // is what every native Windows chat app (WeChat, QQ, Telegram
-        // Desktop, ...) uses — neither winit's IME events nor egui's
-        // text-buffer snapshots are reliable across MS Pinyin, TSF,
-        // and WM_CHAR injection paths; IMM32 is the common denominator.
+        // also fire off the half-typed message. Two layered signals:
         //
-        let ime_composing = is_ime_composing(frame);
+        // 1. `ImmGetCompositionStringW(himc, GCS_COMPSTR, null, 0)` —
+        //    the classic IMM32 composition-length query. Reliable for
+        //    legacy IMM-mode IMEs.
+        //
+        // 2. A short frame cooldown after any `egui::Event::Ime(_)`.
+        //    Modern Windows IMEs (MS Pinyin on Win10/11, Google IME)
+        //    run on TSF, where the IMM32 compat layer often reports
+        //    zero composition length even while the candidate window
+        //    is open — so we *also* treat Enter as IME-owned for a
+        //    few frames after winit hands us any IME event. This also
+        //    catches the case where the Commit event and the leaked
+        //    Enter keystroke land in different frames.
+        let had_ime_event = ctx.input(|i| {
+            i.events.iter().any(|e| matches!(e, egui::Event::Ime(_)))
+        });
+        if had_ime_event {
+            self.ime_cooldown_frames = 3;
+        }
+        let ime_composing = is_ime_composing(frame) || self.ime_cooldown_frames > 0;
         let enter_send = ctx.input_mut(|i| {
             let pressed = i.consume_key(egui::Modifiers::NONE, egui::Key::Enter);
             pressed && !ime_composing
         });
+        if self.ime_cooldown_frames > 0 {
+            self.ime_cooldown_frames -= 1;
+        }
         let hist_up = ctx.input_mut(|i| {
             self.text.is_empty()
                 && i.consume_key(egui::Modifiers::NONE, egui::Key::ArrowUp)
