@@ -1,0 +1,22 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="-80 -80 1184 1184" width="1184" height="1184">
+  <title>VRCText (with outer glow)</title>
+  <defs>
+    <filter id="glow" x="-20%" y="-20%" width="140%" height="140%">
+      <feGaussianBlur stdDeviation="36" result="blur"></feGaussianBlur>
+      <feFlood flood-color="#4F9EFF" flood-opacity="0.55"></feFlood>
+      <feComposite in2="blur" operator="in"></feComposite>
+      <feComposite in="SourceGraphic" operator="over"></feComposite>
+    </filter>
+  </defs>
+  <g filter="url(#glow)">
+    <rect x="0" y="0" width="1024" height="1024" rx="225" ry="225" fill="#4F9EFF"></rect>
+    <rect x="170" y="210" width="684" height="490" rx="120" ry="120" fill="#FFFFFF"></rect>
+    <path d="M 320 698 L 252 824 L 462 700 Z" fill="#FFFFFF"></path>
+    <g fill="#4F9EFF">
+      <rect x="278" y="385" width="84" height="140" rx="42"></rect>
+      <rect x="400" y="315" width="84" height="280" rx="42"></rect>
+      <rect x="522" y="355" width="84" height="200" rx="42"></rect>
+      <rect x="644" y="285" width="84" height="340" rx="42"></rect>
+    </g>
+  </g>
+</svg>

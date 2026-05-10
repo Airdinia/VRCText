@@ -37,7 +37,8 @@ fn main() -> eframe::Result<()> {
             .with_inner_size([460.0, 340.0])
             .with_min_inner_size([460.0, 240.0])
             .with_title("VRCText")
-            .with_app_id("vrctext"),
+            .with_app_id("vrctext")
+            .with_icon(load_icon()),
         ..Default::default()
     };
     eframe::run_native(
@@ -45,4 +46,17 @@ fn main() -> eframe::Result<()> {
         options,
         Box::new(|cc| Ok(Box::new(app::VRCTextApp::new(cc)))),
     )
+}
+
+fn load_icon() -> egui::IconData {
+    let bytes = include_bytes!("../assets/vrctext/icon-export/png/vrctext-256.png");
+    let image = image::load_from_memory(bytes)
+        .expect("embedded icon must decode")
+        .to_rgba8();
+    let (width, height) = image.dimensions();
+    egui::IconData {
+        rgba: image.into_raw(),
+        width,
+        height,
+    }
 }
