@@ -576,9 +576,7 @@ impl TtsEngine for SherpaEngine {
     }
 
     fn apply_device(&mut self, key: Option<&str>) -> Option<String> {
-        if self.tts.is_none() {
-            return None;
-        }
+        self.tts.as_ref()?;
         // Drop the old stream first — cpal will re-acquire the device.
         self.stream = None;
         self.buffer.lock().unwrap().clear();
@@ -601,9 +599,7 @@ impl TtsEngine for SherpaEngine {
     }
 
     fn apply_voice(&mut self, key: Option<&str>) -> Option<String> {
-        let Some(models_dir) = crate::config::models_dir() else {
-            return None;
-        };
+        let models_dir = crate::config::models_dir()?;
         // Cancel pending synths on the old voice before we swap it out,
         // otherwise leftover callbacks would push samples from the previous
         // model into the new voice's output stream.
@@ -625,13 +621,7 @@ impl TtsEngine for SherpaEngine {
 
         self.stream = None;
         self.tts = None;
-        let (new_tts, resolved_key) = match load_pack_by_key(&models_dir, key) {
-            Some((tts, k)) => (Some(tts), k),
-            None => (None, None),
-        };
-        let Some(tts) = new_tts else {
-            return None;
-        };
+        let (tts, resolved_key) = load_pack_by_key(&models_dir, key)?;
         self.tts_sample_rate = tts.sample_rate() as u32;
         self.tts = Some(Arc::new(tts));
         self.current_voice_key = resolved_key.clone();

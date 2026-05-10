@@ -6,8 +6,8 @@ use std::path::PathBuf;
 
 pub const HISTORY_CAP: usize = 50;
 
-/// Which TTS backend to drive. `Sapi` is the zero-dep default; `Sherpa` is a
-/// placeholder for the upcoming ONNX-based AI engine (GPU by default).
+/// Which TTS backend to drive. `Sapi` is the zero-dep system default;
+/// `Sherpa` is the ONNX-based AI engine (Matcha / Kokoro packs).
 #[derive(Serialize, Deserialize, Clone, Copy, Debug, Default, PartialEq, Eq)]
 #[serde(rename_all = "lowercase")]
 pub enum Engine {
@@ -133,16 +133,11 @@ impl Config {
 
     pub fn push_history(&mut self, msg: String) {
         let ts = now_ts();
-        if self
-            .history
-            .back()
-            .map(|e| e.text.as_str())
-            .map_or(false, |t| t == msg.as_str())
-        {
-            if let Some(e) = self.history.back_mut() {
-                e.ts = ts;
+        if let Some(last) = self.history.back_mut() {
+            if last.text == msg {
+                last.ts = ts;
+                return;
             }
-            return;
         }
         self.history.push_back(HistoryEntry { text: msg, ts });
         while self.history.len() > HISTORY_CAP {

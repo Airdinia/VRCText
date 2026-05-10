@@ -49,14 +49,12 @@ fn main() -> eframe::Result<()> {
 }
 
 fn load_icon() -> egui::IconData {
-    let bytes = include_bytes!("../assets/vrctext/icon-export/png/vrctext-256.png");
-    let image = image::load_from_memory(bytes)
-        .expect("embedded icon must decode")
-        .to_rgba8();
-    let (width, height) = image.dimensions();
+    // Raw RGBA generated at build time (see build.rs); avoids pulling a PNG
+    // decoder into the runtime binary.
+    const RGBA: &[u8] = include_bytes!(concat!(env!("OUT_DIR"), "/icon.rgba"));
     egui::IconData {
-        rgba: image.into_raw(),
-        width,
-        height,
+        rgba: RGBA.to_vec(),
+        width: env!("ICON_W").parse().unwrap(),
+        height: env!("ICON_H").parse().unwrap(),
     }
 }

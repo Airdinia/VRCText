@@ -21,6 +21,8 @@ const LONG_PRESS: Duration = Duration::from_millis(500);
 // Shared layout constants so header / central panel / composer / cards all
 // align on the same gutter lines. Changing one value here is enough to keep
 // every surface visually consistent.
+type SherpaLoader = Receiver<Result<LoadedSherpa, String>>;
+
 const PANEL_PAD_H: f32 = 14.0;
 const ROW_PAD_H: f32 = 12.0;
 const ROW_PAD_V: f32 = 7.0;
@@ -67,7 +69,7 @@ pub struct VRCTextApp {
     /// Active receiver when Sherpa is loading on a worker thread. Dropped
     /// as soon as the result is consumed (or when the user switches away
     /// from Sherpa and we no longer care about the outcome).
-    sherpa_loader: Option<Receiver<Result<LoadedSherpa, String>>>,
+    sherpa_loader: Option<SherpaLoader>,
     ime_cooldown_frames: u32,
     ime_preedit_len: usize,
 }
@@ -368,21 +370,22 @@ impl eframe::App for VRCTextApp {
         //   where preedit_len was just reset to 0.
         // - IMM32: legacy IMM-mode IMEs that don't fire egui IME events.
         ctx.input(|i| {
+            let mut saw_ime = false;
             for e in &i.events {
-                match e {
-                    egui::Event::Ime(egui::ImeEvent::Preedit(s)) => {
-                        self.ime_preedit_len = s.chars().count();
+                if let egui::Event::Ime(ime) = e {
+                    saw_ime = true;
+                    match ime {
+                        egui::ImeEvent::Preedit(s) => {
+                            self.ime_preedit_len = s.chars().count();
+                        }
+                        egui::ImeEvent::Commit(_) | egui::ImeEvent::Disabled => {
+                            self.ime_preedit_len = 0;
+                        }
+                        egui::ImeEvent::Enabled => {}
                     }
-                    egui::Event::Ime(
-                        egui::ImeEvent::Commit(_) | egui::ImeEvent::Disabled,
-                    ) => {
-                        self.ime_preedit_len = 0;
-                    }
-                    egui::Event::Ime(egui::ImeEvent::Enabled) => {}
-                    _ => {}
                 }
             }
-            if i.events.iter().any(|e| matches!(e, egui::Event::Ime(_))) {
+            if saw_ime {
                 self.ime_cooldown_frames = 3;
             }
         });
@@ -446,7 +449,7 @@ impl eframe::App for VRCTextApp {
         let status_fading = self
             .status
             .as_ref()
-            .map_or(false, |(_, at)| at.elapsed() < STATUS_FADE);
+            .is_some_and(|(_, at)| at.elapsed() < STATUS_FADE);
         if status_fading || self.hold.is_some() {
             ctx.request_repaint_after(Duration::from_millis(33));
         }
@@ -939,7 +942,7 @@ impl VRCTextApp {
                 let count = self.config.history.len();
                 let confirming = self
                     .clear_confirm_at
-                    .map_or(false, |t| t.elapsed() < Duration::from_secs(5));
+                    .is_some_and(|t| t.elapsed() < Duration::from_secs(5));
                 if !confirming {
                     ui.add_enabled_ui(count > 0, |ui| {
                         let btn = egui::Button::new(
@@ -1130,7 +1133,7 @@ impl VRCTextApp {
     fn render_delete_models_row(&mut self, ui: &mut egui::Ui) {
         let confirming = self
             .delete_models_confirm_at
-            .map_or(false, |t| t.elapsed() < Duration::from_secs(5));
+            .is_some_and(|t| t.elapsed() < Duration::from_secs(5));
         if !confirming {
             let btn = egui::Button::new(
                 egui::RichText::new("🗑  删除已下载模型").color(theme::DANGER),
@@ -1328,7 +1331,7 @@ fn models_present() -> bool {
 /// Sherpa path returns a `LoadingEngine` placeholder plus a channel the
 /// UI polls each frame to swap in the real model once ONNX finishes
 /// loading. Callers that don't want async should use `build_engine`.
-fn boot_engine(config: &Config) -> (Box<dyn TtsEngine>, Option<Receiver<Result<LoadedSherpa, String>>>) {
+fn boot_engine(config: &Config) -> (Box<dyn TtsEngine>, Option<SherpaLoader>) {
     match config.engine {
         Engine::Sapi => (Box::new(SapiEngine::new()), None),
         Engine::Sherpa => {
