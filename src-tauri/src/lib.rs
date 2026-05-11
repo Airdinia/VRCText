@@ -64,29 +64,28 @@ pub fn run() {
             // Listen for VRChat's outbound OSC broadcasts on port 9001 so
             // the UI can show a green dot only when OSC is genuinely live,
             // not just because send_to() returned Ok (UDP can't tell).
-            // Park the listener whenever the window is hidden / minimised
+            // Park the listener only when the window is minimised
             // — the user can't see the indicator anyway, no point spinning.
+            // Losing focus (alt-tab) keeps the probe running so the status
+            // stays up-to-date when the window regains focus.
             if let (Some(probe), Some(window)) = (
                 vrc_probe::spawn_listener(app.handle().clone()),
                 app.get_webview_window("main"),
             ) {
-                let initial = window.is_visible().unwrap_or(true)
-                    && !window.is_minimized().unwrap_or(false);
+                let initial = !window.is_minimized().unwrap_or(false);
                 probe.set_visible(initial);
                 let app_handle = app.handle().clone();
                 window.on_window_event(move |ev| {
-                    use tauri::WindowEvent::{Focused, Resized};
-                    // Focused covers alt-tab; Resized fires on minimise
-                    // (size goes to 0×0 on Windows). Re-query authoritative
-                    // state inside the handler — the event itself doesn't
-                    // tell us "is it minimised right now".
-                    if !matches!(ev, Focused(_) | Resized(_)) {
+                    use tauri::WindowEvent::Resized;
+                    // Resized fires on minimise (size goes to 0×0 on
+                    // Windows) and on restore. We only pause the probe
+                    // when minimised — losing focus is fine.
+                    if !matches!(ev, Resized(_)) {
                         return;
                     }
                     if let Some(w) = app_handle.get_webview_window("main") {
-                        let visible = w.is_visible().unwrap_or(true)
-                            && !w.is_minimized().unwrap_or(false);
-                        probe.set_visible(visible);
+                        let active = !w.is_minimized().unwrap_or(false);
+                        probe.set_visible(active);
                     }
                 });
             }

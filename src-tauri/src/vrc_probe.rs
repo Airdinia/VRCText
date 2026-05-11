@@ -19,9 +19,9 @@
 //!      ~60 Hz so a naive "wake on every packet" loop spins 60 syscalls/s.
 //!      Sleeping lets the OS socket buffer absorb intermediate packets;
 //!      the next `recv_from` returns instantly with one of them.
-//!   2. When the parent window is hidden / minimised the user can't see
-//!      the indicator anyway — the listener thread parks until the
-//!      window comes back. See `ProbeHandle::set_visible`.
+//!   2. When the parent window is minimised the user can't see the
+//!      indicator anyway — the listener thread parks until the window
+//!      is restored. See `ProbeHandle::set_visible` / `lib.rs`.
 
 use std::net::UdpSocket;
 use std::sync::atomic::{AtomicBool, Ordering};
