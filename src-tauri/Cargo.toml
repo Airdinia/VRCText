@@ -8,13 +8,20 @@ description = "Lightweight VRChat OSC chatbox sender"
 name = "vrctext_lib"
 crate-type = ["staticlib", "cdylib", "rlib"]
 
+[features]
+default = []
+# Opt-in DevTools: enable with `cargo tauri dev --features devtools`
+# (or `--features=devtools` on cargo build). Release artefacts ship
+# without the inspector / RPC overhead.
+devtools = ["tauri/devtools"]
+
 [build-dependencies]
 tauri-build = { version = "2", features = [] }
 
 [dependencies]
-tauri = { version = "2", features = ["devtools"] }
+tauri = { version = "2", default-features = false, features = ["wry"] }
 tauri-plugin-single-instance = "2"
-tokio = { version = "1", features = ["rt-multi-thread", "macros"] }
+tokio = { version = "1", features = ["rt", "macros"] }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 toml = "0.8"

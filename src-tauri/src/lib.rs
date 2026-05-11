@@ -52,6 +52,9 @@ pub fn run() {
             if let Some(window) = app.get_webview_window("main") {
                 let _ = window.set_always_on_top(always_on_top);
                 // Run with `VRCTEXT_DEVTOOLS=1` to open DevTools on launch.
+                // Compiled out of release builds — pass `--features devtools`
+                // when running `cargo tauri dev` to get the inspector.
+                #[cfg(feature = "devtools")]
                 if std::env::var("VRCTEXT_DEVTOOLS").as_deref() == Ok("1") {
                     window.open_devtools();
                 }
@@ -61,7 +64,32 @@ pub fn run() {
             // Listen for VRChat's outbound OSC broadcasts on port 9001 so
             // the UI can show a green dot only when OSC is genuinely live,
             // not just because send_to() returned Ok (UDP can't tell).
-            vrc_probe::spawn_listener(app.handle().clone());
+            // Park the listener whenever the window is hidden / minimised
+            // — the user can't see the indicator anyway, no point spinning.
+            if let (Some(probe), Some(window)) = (
+                vrc_probe::spawn_listener(app.handle().clone()),
+                app.get_webview_window("main"),
+            ) {
+                let initial = window.is_visible().unwrap_or(true)
+                    && !window.is_minimized().unwrap_or(false);
+                probe.set_visible(initial);
+                let app_handle = app.handle().clone();
+                window.on_window_event(move |ev| {
+                    use tauri::WindowEvent::{Focused, Resized};
+                    // Focused covers alt-tab; Resized fires on minimise
+                    // (size goes to 0×0 on Windows). Re-query authoritative
+                    // state inside the handler — the event itself doesn't
+                    // tell us "is it minimised right now".
+                    if !matches!(ev, Focused(_) | Resized(_)) {
+                        return;
+                    }
+                    if let Some(w) = app_handle.get_webview_window("main") {
+                        let visible = w.is_visible().unwrap_or(true)
+                            && !w.is_minimized().unwrap_or(false);
+                        probe.set_visible(visible);
+                    }
+                });
+            }
 
             Ok(())
         })

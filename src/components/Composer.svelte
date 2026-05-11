@@ -17,20 +17,17 @@
   let historyCursor: number | null = $state(null);
   let draftBeforeNav = "";
 
-  // Typing-indicator scheduling
-  let lastKeystroke = 0;
-  let lastTypingSent = 0;
+  // Typing-indicator scheduling — fully event-driven so the WebView
+  // process can fall idle between keystrokes (the previous setInterval
+  // fired 4×/s forever, even with the textarea empty).
   let typingActive = false;
-  let heartbeatTimer: ReturnType<typeof setInterval> | null = null;
+  let idleOffTimer: ReturnType<typeof setTimeout> | null = null;
+  let heartbeatTimer: ReturnType<typeof setTimeout> | null = null;
   const TYPING_HEARTBEAT_MS = 1500;
   const TYPING_IDLE_OFF_MS = 2000;
 
   $effect(() => {
-    heartbeatTimer = setInterval(pulseTyping, 250);
-    return () => {
-      if (heartbeatTimer !== null) clearInterval(heartbeatTimer);
-      if (typingActive) void setTyping(false);
-    };
+    return stopTyping;
   });
 
   // Pick up "append this text" requests from HistoryRow's short-click and
@@ -58,33 +55,47 @@
     noteKeystroke();
   });
 
-  function pulseTyping() {
-    const now = performance.now();
-    if (typingActive && now - lastKeystroke > TYPING_IDLE_OFF_MS) {
-      typingActive = false;
-      void setTyping(false);
-      return;
-    }
-    if (typingActive && now - lastTypingSent > TYPING_HEARTBEAT_MS) {
-      lastTypingSent = now;
-      void setTyping(true);
-    }
-  }
-
   function noteKeystroke() {
-    const now = performance.now();
-    lastKeystroke = now;
     if (text.trim().length === 0) {
-      if (typingActive) {
-        typingActive = false;
-        void setTyping(false);
-      }
+      stopTyping();
       return;
     }
     if (!typingActive) {
       typingActive = true;
-      lastTypingSent = now;
       void setTyping(true);
+      armHeartbeat();
+    }
+    armIdleOff();
+  }
+
+  function armIdleOff() {
+    if (idleOffTimer !== null) clearTimeout(idleOffTimer);
+    idleOffTimer = setTimeout(stopTyping, TYPING_IDLE_OFF_MS);
+  }
+
+  // Chained setTimeout (not setInterval) so the timer chain breaks
+  // cleanly when stopTyping clears it — no zombie interval ticks.
+  function armHeartbeat() {
+    if (heartbeatTimer !== null) clearTimeout(heartbeatTimer);
+    heartbeatTimer = setTimeout(() => {
+      if (!typingActive) return;
+      void setTyping(true);
+      armHeartbeat();
+    }, TYPING_HEARTBEAT_MS);
+  }
+
+  function stopTyping() {
+    if (idleOffTimer !== null) {
+      clearTimeout(idleOffTimer);
+      idleOffTimer = null;
+    }
+    if (heartbeatTimer !== null) {
+      clearTimeout(heartbeatTimer);
+      heartbeatTimer = null;
+    }
+    if (typingActive) {
+      typingActive = false;
+      void setTyping(false);
     }
   }
 
@@ -119,7 +130,7 @@
       onStatus(String(err), "error");
     } finally {
       sending = false;
-      typingActive = false;
+      stopTyping();
       textarea?.focus();
     }
   }
