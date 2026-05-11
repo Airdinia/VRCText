@@ -1,12 +1,10 @@
 # Build outputs
 /dist/
-/src-tauri/target/
-/src-tauri/gen/schemas/
 
 # Node deps
 /node_modules/
 
-# Editor
+# Editor / IDE
 .vscode/
 .idea/
 
@@ -14,6 +12,14 @@
 Thumbs.db
 .DS_Store
 
-# Misc
-*.exe.pdb
+# Debug symbols
+*.pdb
+
+# AI tools
 /.claude/
+/.gemini/
+
+# Env & logs
+.env
+.env.*
+*.log
