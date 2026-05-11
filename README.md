@@ -1,141 +1,168 @@
 # VRCText
 
-极简、轻量的 **VRChat OSC 聊天框发送器 + 语音朗读** Windows 工具。打字发到头顶气泡，同时可选朗读。单 exe 约 **20 MB**，双击即开，依赖系统自带的 WebView2 Runtime（Win11 默认安装、Win10 大多数已有）。
+> Tiny VRChat OSC chatbox sender with optional AI text-to-speech. Single ~20 MB exe, double-click to run.
+
+[English](./README.md) · [中文](./README.zh-CN.md)
+
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
+[![Release](https://img.shields.io/github/v/release/congyoua/VRCText?include_prereleases&color=blue)](https://github.com/congyoua/VRCText/releases)
+[![Downloads](https://img.shields.io/github/downloads/congyoua/VRCText/total?color=brightgreen)](https://github.com/congyoua/VRCText/releases)
+[![Stars](https://img.shields.io/github/stars/congyoua/VRCText?style=social)](https://github.com/congyoua/VRCText/stargazers)
+![Windows](https://img.shields.io/badge/Windows%2010%2F11-0078D6?logo=windows&logoColor=white)
 
 ---
 
-## 功能
+## Demo
 
-- 打字→**头顶气泡**（通过 VRChat OSC，绕过游戏内软键盘）
-- 打字→**语音朗读**，两档引擎：
-  - **SAPI** — Windows 自带，零下载，启动即用
-  - **AI 引擎** — 可选升级，更自然的中文合成，首次用时应用内下载 ~85 MB 模型到 `%APPDATA%`
-- 可选 **语音** 和 **输出设备**（配合虚拟音频线缆路由到 VRChat 麦克风）
-- **历史记录**：悬停重发（短按追加到输入框，长按 0.5 秒直接重发）
-- **打字指示器**、窗口置顶、深色 UI、配置持久化
+<!-- TODO: replace this placeholder with a real screenshot or GIF -->
+<!-- Suggested: docs/demo.gif, ~600 px wide, < 2 MB, recorded with ScreenToGif -->
 
----
-
-## 截图
+<details><summary>Preview (placeholder — replace with a real shot)</summary>
 
 ```
 ┌────────────────────────────────────────────┐
 │ VRCText  ● OSC 127.0.0.1:9000    📌 🔔 🔊 ⚙│
 ├────────────────────────────────────────────┤
-│  14:32    你好，大家                  [↺] │
-│  昨天 20:15  今天天气怎么样？         [↺] │
+│  14:32    Hello everyone              [↺] │
+│  Yesterday 20:15  How's the weather?  [↺] │
 ├────────────────────────────────────────────┤
 │ ┌────────────────────────────────────────┐│
-│ │ 输入消息… [Enter] 发送                  ││
+│ │ type a message…   [Enter] to send       ││
 │ └────────────────────────────────────────┘│
-│ 12/144    已发送                  [发送 ⏎] │
+│ 12/144    Sent                    [Send ⏎]│
 └────────────────────────────────────────────┘
 ```
 
----
-
-## 安装
-
-1. 从 [Releases](../../releases) 下载 `vrctext.exe`
-2. 双击运行（无需安装）
-3. VRChat → `Settings → OSC → Enabled`
-
-> 首次打开时 Windows SmartScreen 会提示"已保护你的电脑" → 点 **更多信息 → 仍要运行**。
+</details>
 
 ---
 
-## 使用
+## Features
 
-### 发送文字到头顶
+- **Type → chatbox bubble** above your VRChat avatar via OSC. No more fumbling with the in-game soft keyboard.
+- **Type → spoken voice**, two engines side by side:
+  - **SAPI** — Windows built-in, zero install, ready out of the box
+  - **AI engine** — natural neural synthesis, models fetched in-app on demand:
+    - **Matcha zh-baker** (~85 MB) — Mandarin Chinese, single voice
+    - **Kokoro multilingual v1.1** (~350 MB, full precision) — 103 voices across **English, Chinese, Japanese, Korean, French**
+- **Output device routing** — pick any audio output (pair with a virtual cable to feed VRChat's mic input)
+- **History** — hover any past message to re-send (tap = append to composer, hold 0.5 s = resend with progress)
+- **Typing indicator**, always-on-top toggle, dark UI, persistent config
+- **Bilingual UI** — full English + Chinese (zh) parity, switchable in settings
+- **No telemetry, no account, no internet** (after the optional AI model download)
 
-在输入框打字，`Enter` 发送 / `Shift+Enter` 换行。头顶气泡立即出现。
+---
 
-### 语音朗读
+## Install
 
-⚙ 设置 → **引擎** 选 **SAPI** 或 **AI 引擎**。
+1. Grab `vrctext.exe` from [Releases](https://github.com/congyoua/VRCText/releases).
+2. Double-click — no installer, no admin rights.
+3. In VRChat: `Settings → OSC → Enabled`.
 
-- **SAPI**：系统语音直接能用。`语音 / 语言` 下拉选 Huihui (zh-CN) / Zira / David 等；更多语音在 Windows 设置 → 时间和语言 → 语音 → 管理语音里加
-- **AI 引擎**：首次使用点"下载模型"（~85 MB 自动下到 `%APPDATA%\vrctext\models\`），完成后即可用；不再需要时点"删除已下载模型"回收空间
+> First launch may show Windows SmartScreen ("Windows protected your PC") → **More info → Run anyway**. The exe is unsigned (no Authenticode cert); this is normal for indie tools.
 
-点 **🔈 试听** 不用发送就能预听。
+---
 
-### 路由到 VRChat 麦克风
+## Usage
 
-需要一条虚拟音频线缆（Windows 不自带）：
+### Send to the chatbox
 
-1. 装 [**VB-Audio Virtual Cable**](https://vb-audio.com/Cable/)（免费）
-2. VRCText → ⚙ → **输出设备** 选 `CABLE Input`，打开 🔊
-3. VRChat → 麦克风输入 选 `CABLE Output`
-4. （可选）`CABLE Output` 属性 → 聆听 → 勾选"聆听此设备"，自己也能听到
+Type in the composer. `Enter` sends, `Shift+Enter` inserts a newline. The bubble appears above your avatar immediately.
 
-### 历史记录
+### Voice readout
 
-| 操作 | 效果 |
+Open ⚙ Settings → **Engine** = **SAPI** or **AI Engine**.
+
+- **SAPI** — works the moment you install Windows. Pick voice / language in the dropdown (Huihui zh-CN, Zira, David, …). Add more in *Windows Settings → Time & Language → Speech → Manage voices*.
+- **AI Engine** — first time, click **Download** on the pack you want:
+  - **Matcha (~85 MB)** for Chinese only
+  - **Kokoro (~350 MB)** for multilingual coverage with 103 voices
+  Stored at `%APPDATA%\vrctext\vrctext\data\models\`. Click **Delete models** to reclaim space at any time.
+
+Hit **🔈 Preview** to hear a sample without sending anything to chat.
+
+### Route TTS to VRChat's mic
+
+VRChat treats your microphone as the input; to feed TTS audio in, you need a virtual cable (Windows doesn't ship one):
+
+1. Install [**VB-Audio Virtual Cable**](https://vb-audio.com/Cable/) (free).
+2. VRCText → ⚙ → **Output device** = `CABLE Input`, toggle 🔊 on.
+3. VRChat → Microphone = `CABLE Output`.
+4. *(Optional)* `CABLE Output` properties → **Listen** → enable *Listen to this device* so you can hear yourself too.
+
+### History
+
+| Action | Effect |
 |---|---|
-| 悬停某条 | 右侧出现 ↺ 按钮 |
-| 短按 ↺ | 内容追加到当前输入框 |
-| 长按 ↺ 0.5 秒 | 直接重发（带进度条，不动输入框） |
-| 输入框为空时 ↑ / ↓ | 翻阅最近消息 |
+| Hover a row | `↺` button slides in on the right |
+| Tap `↺` | Content appended to the composer at the caret |
+| Hold `↺` for 0.5 s | Resend directly (progress bar; composer untouched) |
+| `↑` / `↓` with empty composer | Step through recent messages |
 
-上限 50 条，超出自动丢弃最早的。⚙ → 清空全部历史（两步确认）。
+Capped at 50 entries — oldest are dropped automatically. ⚙ → **Clear all** clears the lot (two-step confirm).
 
 ---
 
-## 配置 / 数据文件位置
+## Config / Data location
 
 ```
-%APPDATA%\vrctext\vrctext\config\config.toml    # 设置
-%APPDATA%\vrctext\vrctext\data\models\          # AI 模型（按需下载）
+%APPDATA%\vrctext\vrctext\config\config.toml    # settings
+%APPDATA%\vrctext\vrctext\data\models\          # AI models (downloaded on demand)
 ```
 
-删除对应文件即可重置或回收空间。
+> The nested `vrctext\vrctext` isn't a typo — it's the standard layout the [`directories`](https://crates.io/crates/directories) crate produces from `ProjectDirs::from("dev", "vrctext", "vrctext")`. Delete either folder to reset settings or reclaim disk space.
 
 ---
 
-## 已知限制
+## Known limitations
 
-- **Windows only**（用了 SAPI / WaveOut / winsock / IMM32）
-- 需要系统已安装 **Microsoft WebView2 Runtime**（Win11 默认有；Win10 极少数老机器可能缺,启动失败时去 [microsoft.com/edge/webview2](https://developer.microsoft.com/en-us/microsoft-edge/webview2/) 装一下）
-- 不自带虚拟音频线缆（见上）
-- 未签名 `.exe`，SmartScreen 会提示（无害，可跳过）
-- AI 引擎首次使用需联网下载模型
+- **Windows only.** The backend talks directly to SAPI / WaveOut / WinSock / IMM32.
+- Requires **Microsoft WebView2 Runtime**. Win 11 ships with it; a few older Win 10 builds need to install it manually from [microsoft.com/edge/webview2](https://developer.microsoft.com/en-us/microsoft-edge/webview2/) — VRCText shows a bilingual dialog with the link if it's missing.
+- **No bundled virtual audio cable** (see VB-Cable section above).
+- **Unsigned `.exe`** — SmartScreen prompts on first run. Harmless; skippable.
+- **AI engine needs network for the first download**, then runs fully offline.
 
 ---
 
-## 从源码构建
+## Build from source
 
-技术栈:Tauri 2 (Rust 后端) + Svelte 5 + TypeScript + Vite。
+Stack: **Tauri 2** (Rust backend) + **Svelte 5** + **TypeScript** + **Vite**.
+
+**Prerequisites**
+- [Rust stable](https://rustup.rs/) with `x86_64-pc-windows-msvc` target
+- Node.js 18 or newer
+- The MSVC C++ build tools (Visual Studio Build Tools — anything that gives you `link.exe`)
 
 ```sh
-# 一次性
+# One-time setup
 rustup target add x86_64-pc-windows-msvc
 npm install
 
-# 开发(热重载)
+# Dev (hot-reload, DevTools available with --features devtools)
 npm run tauri dev
 
-# 出包(必须用 tauri-cli,不要直接 cargo build)
+# Release build — standalone exe, no NSIS / MSI installer
 npm run tauri build -- --no-bundle
-# 产物在 src-tauri\target\release\vrctext.exe
+# Output: src-tauri\target\release\vrctext.exe
 ```
 
-`bundle.active: false` 让构建跳过 NSIS / MSI,只产出独立 `.exe`。如需安装包,在
-`src-tauri/tauri.conf.json` 改 `"active": true` 并把 `"targets"` 设为 `"nsis"`。
+`bundle.active: false` in `tauri.conf.json` makes the release build produce a single standalone `.exe` rather than an installer. Flip it to `true` and set `"targets": "nsis"` if you want an NSIS installer instead.
 
-> **注意**:必须用 `npm run tauri build`(走 tauri-cli)来出 release。直接 `cargo build --release`
-> 会让 WebView 仍然指向 `devUrl: http://localhost:1420`,运行时显示空白页 ——
-> 因为 `cargo build` 不参与 tauri-cli 的 dev/release URL 切换逻辑。
+> **Heads up:** Use `npm run tauri build` (which routes through `tauri-cli`), not a plain `cargo build --release`. The latter skips tauri-cli's dev/release URL swap, so the WebView keeps pointing at `devUrl: http://localhost:1420` and the window opens blank. If you really need to bypass tauri-cli, either remove `devUrl` from `tauri.conf.json` or set `app.windows[0].url = "index.html"` to force `frontendDist`.
 >
-> 想绕过 tauri-cli 出 .exe 的话,要么去掉 `devUrl`,要么在 `tauri.conf.json`
-> 的 `app.windows[0]` 里写 `"url": "index.html"` 显式强制 frontendDist。
->
-> 另:Svelte 5 的 runes(`$state` / `$derived` / `$effect`)只在 `.svelte` 和
-> `.svelte.ts`/`.svelte.js` 文件里被编译。普通 `.ts` 文件里写 `$state(...)`
-> 在 runtime 会报 `ReferenceError`。这就是为什么 store 文件命名为
-> [src/lib/stores.svelte.ts](src/lib/stores.svelte.ts) 而非 `.ts`。
+> Also: Svelte 5 runes (`$state` / `$derived` / `$effect`) only compile inside `.svelte` and `.svelte.ts` / `.svelte.js` files. Putting `$state(...)` in a plain `.ts` throws `ReferenceError` at runtime — that's why the store is named [`src/lib/stores.svelte.ts`](src/lib/stores.svelte.ts), not `.ts`.
+
+---
+
+## Acknowledgements
+
+- [Tauri](https://tauri.app/) — the desktop runtime that keeps the binary tiny
+- [Svelte](https://svelte.dev/) — UI framework
+- [Sherpa-ONNX](https://github.com/k2-fsa/sherpa-onnx) — on-device neural TTS
+- [VB-Audio](https://vb-audio.com/Cable/) — virtual cable for mic routing
 
 ---
 
 ## License
 
-MIT
+[MIT](./LICENSE) © 2026 congyoua

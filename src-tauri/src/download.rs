@@ -1,10 +1,11 @@
-//! Background downloader for sherpa-onnx TTS model bundles. Phase 8 ports
-//! it verbatim from the legacy egui app; Phase 10 swaps the
-//! `Arc<Mutex<DownloadState>>` polling for `AppHandle.emit` events.
+//! Background downloader for sherpa-onnx TTS model bundles. Progress is
+//! surfaced to the UI via `AppHandle.emit`.
 //!
 //! Two packs are currently exposed:
-//!   • Matcha zh-baker    — 中文单音色，~85 MB（含通用 vocos 声码器）
-//!   • Kokoro multi-lang  — 中英多音色，~350 MB（全精度 v1.1，自带所有依赖）
+//!   • Matcha zh-baker    — Mandarin Chinese single voice, ~85 MB
+//!                          (bundled with the universal vocos vocoder)
+//!   • Kokoro multi-lang  — Multilingual v1.1, ~350 MB full precision,
+//!                          103 voices across en / zh / ja / ko / fr
 //!
 //! Packs are extracted into `%APPDATA%\vrctext\models\` and discovered by the
 //! TTS layer on startup.
