@@ -224,7 +224,6 @@
   .side {
     display: flex;
     align-items: center;
-    gap: 8px;
     color: var(--text-faint);
     font-size: 11px;
     font-variant-numeric: tabular-nums;
@@ -237,10 +236,19 @@
     display: inline-flex;
     align-items: center;
     justify-content: center;
-    width: 14px;
+    width: 0;
     height: 14px;
+    margin-left: 0;
+    opacity: 0;
+    overflow: hidden;
     color: var(--text-faint);
-    transition: color 120ms;
+    transition: width 150ms ease, opacity 150ms ease, margin-left 150ms ease,
+      color 120ms;
+  }
+  .row:hover .icon-wrap {
+    width: 14px;
+    margin-left: 8px;
+    opacity: 1;
   }
   .icon-wrap.hover {
     color: var(--accent);
