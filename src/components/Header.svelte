@@ -5,6 +5,7 @@
   import IconButton from "./IconButton.svelte";
   import { savePartialConfig, setAlwaysOnTop, ttsSetEnabled } from "../lib/ipc";
   import { store } from "../lib/stores.svelte";
+  import { t } from "../lib/i18n.svelte";
 
   interface Props {
     settingsOpen: boolean;
@@ -57,28 +58,28 @@
   <div class="spacer"></div>
 
   <IconButton
-    label={cfg?.always_on_top ? "取消窗口置顶" : "窗口置顶"}
+    label={cfg?.always_on_top ? t("unpinWindow") : t("pinWindow")}
     active={!!cfg?.always_on_top}
     onclick={togglePin}
   >
     {#if cfg?.always_on_top}<Pin />{:else}<PinOff />{/if}
   </IconButton>
   <IconButton
-    label={cfg?.play_sound ? "关闭 VRChat 提示音" : "开启 VRChat 提示音"}
+    label={cfg?.play_sound ? t("disableBell") : t("enableBell")}
     active={!!cfg?.play_sound}
     onclick={toggleBell}
   >
     {#if cfg?.play_sound}<Bell />{:else}<BellOff />{/if}
   </IconButton>
   <IconButton
-    label={cfg?.tts_enabled ? "关闭语音朗读" : "开启语音朗读"}
+    label={cfg?.tts_enabled ? t("disableTts") : t("enableTts")}
     active={!!cfg?.tts_enabled}
     onclick={toggleTts}
   >
     {#if cfg?.tts_enabled}<Volume2 />{:else}<VolumeX />{/if}
   </IconButton>
   <IconButton
-    label={settingsOpen ? "关闭设置" : "打开设置"}
+    label={settingsOpen ? t("closeSettings") : t("openSettings")}
     active={settingsOpen}
     onclick={onToggleSettings}
   >

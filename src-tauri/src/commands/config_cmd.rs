@@ -29,6 +29,7 @@ pub struct ConfigPatch {
     pub tts_voice_sapi: Option<Option<String>>,
     pub tts_device_sherpa: Option<Option<String>>,
     pub tts_voice_sherpa: Option<Option<String>>,
+    pub language: Option<String>,
 }
 
 #[tauri::command]
@@ -68,6 +69,9 @@ pub fn save_partial_config(
         }
         if let Some(v) = patch.tts_voice_sherpa {
             cfg.tts_voice_sherpa = v;
+        }
+        if let Some(v) = patch.language {
+            cfg.language = v;
         }
         cfg.save();
         cfg.clone()

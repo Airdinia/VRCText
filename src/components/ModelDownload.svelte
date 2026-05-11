@@ -2,14 +2,17 @@
   import { Check, Download, Trash2, AlertCircle } from "lucide-svelte";
   import { downloadPack, deleteModels, type ModelKindStr } from "../lib/ipc";
   import { store } from "../lib/stores.svelte";
+  import { t, tf, maybeT, type Key } from "../lib/i18n.svelte";
 
   // Two-step delete confirm
   let deleteConfirmAt = $state(0);
   const deleteArmed = $derived(performance.now() < deleteConfirmAt);
 
-  const PACKS: { kind: ModelKindStr; name: string; size: string }[] = [
-    { kind: "matcha", name: "Matcha 中文", size: "~85 MB" },
-    { kind: "kokoro", name: "Kokoro 多语言", size: "~350 MB" },
+  // Pack names live in the i18n dict so they flip with the UI language.
+  // Sizes are units, not text — left as-is.
+  const PACKS: { kind: ModelKindStr; nameKey: Key; size: string }[] = [
+    { kind: "matcha", nameKey: "matchaName", size: "~85 MB" },
+    { kind: "kokoro", nameKey: "kokoroName", size: "~350 MB" },
   ];
 
   const downloading = $derived(store.download !== null);
@@ -69,11 +72,11 @@
     <div class="card">
       <div class="head">
         <div class="meta">
-          <div class="name">{pack.name}</div>
+          <div class="name">{t(pack.nameKey)}</div>
           <div class="size">{pack.size}</div>
         </div>
         {#if status === "installed"}
-          <span class="ok"><Check /> 已安装</span>
+          <span class="ok"><Check /> {t("installed")}</span>
         {:else if status === "downloading"}
           <span class="pct">{(progressFor(pack.kind) * 100).toFixed(0)}%</span>
         {:else}
@@ -83,12 +86,12 @@
             disabled={downloading}
             onclick={() => startDownload(pack.kind)}
           >
-            <Download /> 下载
+            <Download /> {t("download")}
           </button>
         {/if}
       </div>
       {#if status === "downloading"}
-        <div class="stage">{stageFor(pack.kind)}</div>
+        <div class="stage">{maybeT(stageFor(pack.kind))}</div>
         <div class="bar">
           <div
             class="bar-fill"
@@ -102,7 +105,7 @@
   {#if store.downloadError}
     <div class="err-block">
       <div class="err">
-        <AlertCircle /> 下载失败: {store.downloadError.message}
+        <AlertCircle /> {tf("downloadFailed", { message: maybeT(store.downloadError.message) })}
       </div>
       <div class="err-actions">
         <button
@@ -111,14 +114,14 @@
           disabled={downloading}
           onclick={() => startDownload(store.downloadError!.kind)}
         >
-          重试
+          {t("retry")}
         </button>
         <button
           type="button"
           class="dismiss"
           onclick={() => (store.downloadError = null)}
         >
-          取消
+          {t("dismiss")}
         </button>
       </div>
     </div>
@@ -132,7 +135,7 @@
       onclick={onDelete}
     >
       <Trash2 />
-      {deleteArmed ? "再点确认全部删除" : "删除所有模型"}
+      {deleteArmed ? t("confirmDeleteAll") : t("deleteAllModels")}
     </button>
   {/if}
 </div>

@@ -2,6 +2,7 @@
   import { Send, Loader2 } from "lucide-svelte";
   import { sendMessage, setTyping } from "../lib/ipc";
   import { MAX_CHARS, store, appendBus, setOscStatus } from "../lib/stores.svelte";
+  import { t, tf, maybeT } from "../lib/i18n.svelte";
 
   interface Props {
     onStatus: (text: string, tone?: "info" | "error") => void;
@@ -104,14 +105,16 @@
   const countTone = $derived(
     remaining < 0 ? "over" : remaining < 15 ? "warn" : "ok",
   );
-  const countLabel = $derived(remaining < 0 ? `超出 ${-remaining}` : `${remaining}`);
+  const countLabel = $derived(
+    remaining < 0 ? tf("overflowCount", { n: -remaining }) : `${remaining}`,
+  );
 
   async function doSend() {
     if (sending) return;
     const trimmed = text.trim();
     if (!trimmed) return;
     if (remaining < 0) {
-      onStatus(`超过 ${MAX_CHARS} 字符上限`, "error");
+      onStatus(tf("overflowToast", { n: MAX_CHARS }), "error");
       return;
     }
     sending = true;
@@ -123,11 +126,11 @@
       // packet coming back from VRChat (see stores.svelte.ts).
       text = "";
       historyCursor = null;
-      onStatus("已发送");
+      onStatus(t("sentToast"));
       if (textarea) textarea.style.height = "auto";
     } catch (err) {
       setOscStatus("error");
-      onStatus(String(err), "error");
+      onStatus(maybeT(String(err)), "error");
     } finally {
       sending = false;
       stopTyping();
@@ -185,7 +188,7 @@
   <textarea
     bind:this={textarea}
     bind:value={text}
-    placeholder="$ 输入消息_"
+    placeholder={t("composerPlaceholder")}
     rows="1"
     onkeydown={onKeyDown}
     oninput={onInput}
@@ -196,7 +199,7 @@
   <div class="meta">
     <div class="hint">
       <kbd>↵</kbd>
-      <span class="hint-label" class:active={focused}>发送</span>
+      <span class="hint-label" class:active={focused}>{t("sendHint")}</span>
     </div>
     <div class="right">
       <span class="counter" data-tone={countTone}>{countLabel}</span>
@@ -205,8 +208,8 @@
         type="button"
         disabled={sending || !text.trim() || remaining < 0}
         onclick={doSend}
-        title="发送 (Enter)"
-        aria-label="发送"
+        title={t("sendButtonTitle")}
+        aria-label={t("sendButton")}
       >
         {#if sending}
           <Loader2 class="spin" />

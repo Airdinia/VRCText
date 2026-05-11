@@ -36,10 +36,12 @@ impl ModelKind {
     pub const ALL: &'static [ModelKind] =
         &[ModelKind::MatchaZhBaker, ModelKind::KokoroMultiLang];
 
-    pub fn display_name(self) -> &'static str {
+    /// i18n dictionary key for the user-facing pack name. Resolved by the
+    /// frontend's `maybeT()` so the label flips with UI language.
+    pub fn i18n_key(self) -> &'static str {
         match self {
-            ModelKind::MatchaZhBaker => "Matcha 中文（baker）",
-            ModelKind::KokoroMultiLang => "Kokoro 多语言（中英）",
+            ModelKind::MatchaZhBaker => "matchaName",
+            ModelKind::KokoroMultiLang => "kokoroName",
         }
     }
 
@@ -96,7 +98,7 @@ pub struct ModelDownloader {
 impl ModelDownloader {
     pub fn start(kind: ModelKind, models_dir: PathBuf) -> Self {
         let state = Arc::new(Mutex::new(DownloadState {
-            status: format!("准备下载 {}…", kind.display_name()),
+            status: format!("@i18n:dlPrepare|{}", kind.i18n_key()),
             progress: 0.0,
             done: false,
             error: None,
@@ -107,7 +109,7 @@ impl ModelDownloader {
             let mut s = state_clone.lock().unwrap();
             match result {
                 Ok(()) => {
-                    s.status = "完成".into();
+                    s.status = "@i18n:dlComplete".into();
                     s.progress = 1.0;
                 }
                 Err(msg) => s.error = Some(msg),
@@ -123,7 +125,7 @@ impl ModelDownloader {
 }
 
 fn run(kind: ModelKind, models_dir: &Path, state: &Arc<Mutex<DownloadState>>) -> Result<(), String> {
-    std::fs::create_dir_all(models_dir).map_err(|e| format!("创建目录失败: {e}"))?;
+    std::fs::create_dir_all(models_dir).map_err(|e| format!("@i18n:dlCreateDirFail|{e}"))?;
     match kind {
         ModelKind::MatchaZhBaker => run_matcha(models_dir, state),
         ModelKind::KokoroMultiLang => run_kokoro(models_dir, state),
@@ -133,13 +135,13 @@ fn run(kind: ModelKind, models_dir: &Path, state: &Arc<Mutex<DownloadState>>) ->
 fn run_matcha(models_dir: &Path, state: &Arc<Mutex<DownloadState>>) -> Result<(), String> {
     let vocos_path = models_dir.join("vocos-22khz-univ.onnx");
     if !vocos_path.exists() {
-        set_status(state, "下载声码器 (~24 MB)", 0.0);
+        set_status(state, "@i18n:dlVocoder", 0.0);
         download_to(VOCOS_URL, &vocos_path, state, (0.0, 0.25))?;
     }
     let tmp = models_dir.join("matcha-icefall-zh-baker.tar.bz2");
-    set_status(state, "下载 Matcha 中文模型 (~60 MB)", 0.25);
+    set_status(state, "@i18n:dlMatcha", 0.25);
     download_to(MATCHA_URL, &tmp, state, (0.25, 0.9))?;
-    set_status(state, "解压…", 0.9);
+    set_status(state, "@i18n:dlExtract", 0.9);
     extract(&tmp, models_dir)?;
     let _ = std::fs::remove_file(&tmp);
     verify_post_extract(ModelKind::MatchaZhBaker, models_dir)
@@ -147,9 +149,9 @@ fn run_matcha(models_dir: &Path, state: &Arc<Mutex<DownloadState>>) -> Result<()
 
 fn run_kokoro(models_dir: &Path, state: &Arc<Mutex<DownloadState>>) -> Result<(), String> {
     let tmp = models_dir.join("kokoro-multi-lang-v1_1.tar.bz2");
-    set_status(state, "下载 Kokoro 多语言模型 (~350 MB, 全精度)", 0.0);
+    set_status(state, "@i18n:dlKokoro", 0.0);
     download_to(KOKORO_URL, &tmp, state, (0.0, 0.9))?;
-    set_status(state, "解压（文件较多，请耐心等待）…", 0.9);
+    set_status(state, "@i18n:dlExtractLarge", 0.9);
     extract(&tmp, models_dir)?;
     let _ = std::fs::remove_file(&tmp);
     verify_post_extract(ModelKind::KokoroMultiLang, models_dir)
@@ -159,10 +161,7 @@ fn verify_post_extract(kind: ModelKind, models_dir: &Path) -> Result<(), String>
     if kind.is_installed(models_dir) {
         return Ok(());
     }
-    Err(format!(
-        "解压完成但 {} 的关键文件缺失，请打开模型目录检查。",
-        kind.display_name()
-    ))
+    Err(format!("@i18n:dlVerifyMissing|{}", kind.i18n_key()))
 }
 
 fn set_status(state: &Arc<Mutex<DownloadState>>, msg: &str, progress: f32) {
@@ -179,23 +178,23 @@ fn download_to(
 ) -> Result<(), String> {
     let resp = ureq::get(url)
         .call()
-        .map_err(|e| format!("HTTP 请求失败: {e}"))?;
+        .map_err(|e| format!("@i18n:dlHttp|{e}"))?;
     let total: Option<u64> = resp
         .header("Content-Length")
         .and_then(|s| s.parse().ok());
     let mut reader = resp.into_reader();
-    let mut file = File::create(dest).map_err(|e| format!("写文件失败: {e}"))?;
+    let mut file = File::create(dest).map_err(|e| format!("@i18n:dlWriteFile|{e}"))?;
     let mut buf = vec![0u8; 64 * 1024];
     let mut downloaded: u64 = 0;
     loop {
         let n = reader
             .read(&mut buf)
-            .map_err(|e| format!("下载中断: {e}"))?;
+            .map_err(|e| format!("@i18n:dlInterrupted|{e}"))?;
         if n == 0 {
             break;
         }
         file.write_all(&buf[..n])
-            .map_err(|e| format!("写入失败: {e}"))?;
+            .map_err(|e| format!("@i18n:dlWriteData|{e}"))?;
         downloaded += n as u64;
         if let Some(total) = total {
             let frac = (downloaded as f32 / total as f32).min(1.0);
@@ -207,10 +206,10 @@ fn download_to(
 }
 
 fn extract(archive: &Path, dest: &Path) -> Result<(), String> {
-    let file = File::open(archive).map_err(|e| format!("打开压缩包失败: {e}"))?;
+    let file = File::open(archive).map_err(|e| format!("@i18n:dlOpenArchive|{e}"))?;
     let decoder = bzip2::read::BzDecoder::new(file);
     let mut tar = tar::Archive::new(decoder);
-    tar.unpack(dest).map_err(|e| format!("解压失败: {e}"))?;
+    tar.unpack(dest).map_err(|e| format!("@i18n:dlExtractFail|{e}"))?;
     Ok(())
 }
 

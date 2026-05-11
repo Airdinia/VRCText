@@ -3,6 +3,7 @@
   import { resendHistory } from "../lib/ipc";
   import type { HistoryEntry } from "../lib/ipc";
   import { requestAppend, setOscStatus } from "../lib/stores.svelte";
+  import { t, tf, maybeT } from "../lib/i18n.svelte";
 
   interface Props {
     entry: HistoryEntry;
@@ -103,10 +104,10 @@
         entry.text.length > 12
           ? `${entry.text.slice(0, 12)}…`
           : entry.text;
-      onResend(`已重发 「${preview}」`);
+      onResend(tf("resentToast", { preview }));
     } catch (err) {
       setOscStatus("error");
-      onResend(`重发失败: ${err}`);
+      onResend(tf("resendFailedToast", { err: maybeT(String(err)) }));
     }
   }
 
@@ -134,7 +135,7 @@
   class:pressing
   role="button"
   tabindex="0"
-  title="短按:追加到输入框｜长按 0.5s:直接重发"
+  title={t("historyRowTooltip")}
   onmouseenter={() => (hover = true)}
   onmouseleave={() => {
     hover = false;

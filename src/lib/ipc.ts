@@ -9,6 +9,8 @@ import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 
 export type Engine = "sapi" | "sherpa";
 
+export type Lang = "zh" | "en";
+
 export interface HistoryEntry {
   text: string;
   ts: number;
@@ -25,6 +27,7 @@ export interface Config {
   tts_voice_sapi: string | null;
   tts_device_sherpa: string | null;
   tts_voice_sherpa: string | null;
+  language: Lang;
   history: HistoryEntry[];
 }
 
@@ -39,6 +42,7 @@ export interface ConfigPatch {
   tts_voice_sapi?: string | null;
   tts_device_sherpa?: string | null;
   tts_voice_sherpa?: string | null;
+  language?: Lang;
 }
 
 // ── Config / OSC / history ───────────────────────────────────────────────

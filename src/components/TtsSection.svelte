@@ -12,6 +12,7 @@
     type Engine,
   } from "../lib/ipc";
   import { store, pushToast } from "../lib/stores.svelte";
+  import { t, maybeT } from "../lib/i18n.svelte";
   import ModelDownload from "./ModelDownload.svelte";
 
   let devices = $state<Choice[]>([]);
@@ -19,18 +20,26 @@
   let previewing = $state(false);
   let refreshing = $state(false);
 
-  // Re-fetch device/voice lists whenever the engine identity OR its
-  // availability flips — covers both "user switched SAPI ↔ Sherpa" and
-  // "model finished downloading so Sherpa just became usable". Skipping
-  // the latter is the bug that made dropdowns stay empty after a fresh
-  // model install until the user hit `刷新设备` by hand.
+  // Re-fetch device/voice lists whenever the engine identity, its
+  // availability, OR the installed-pack set changes. The packs term covers
+  // "second pack just finished downloading while Sherpa was already
+  // available" — `available` doesn't re-flip in that case, so without it
+  // the new voices would stay hidden until the user reopens settings.
+  //
+  // The "loading" state is recorded into `lastFetchedSig` but we skip the
+  // actual fetch for it: while LoadingEngine is active, voice_choices()
+  // returns an empty Vec. The race we have to defeat is "download-complete
+  // arrives just after backend enqueued ReloadSherpa, so our ListVoices
+  // command lands on the LoadingEngine and gets nothing back." By
+  // recording the loading sig, the subsequent transition back to
+  // engine="sherpa" registers as a new signature and re-fires the fetch.
   let lastFetchedSig = "";
   $effect(() => {
     const e = store.tts.engine;
-    if (e === "loading") return;
-    const sig = `${e}:${store.tts.available}`;
+    const sig = `${e}:${store.tts.available}:${store.installedPacks.length}`;
     if (sig === lastFetchedSig) return;
     lastFetchedSig = sig;
+    if (e === "loading") return;
     void refreshChoices();
   });
 
@@ -54,7 +63,7 @@
   async function pickEngine(engine: Engine) {
     if (cfg && cfg.engine === engine) return;
     await ttsSwitchEngine(engine);
-    pushToast(engine === "sapi" ? "已切换到 Windows SAPI" : "已切换到 Sherpa AI");
+    pushToast(t(engine === "sapi" ? "switchedToSapi" : "switchedToSherpa"));
   }
 
   async function pickDevice(e: Event) {
@@ -75,7 +84,7 @@
   async function preview() {
     previewing = true;
     try {
-      await ttsSpeak("VRChat 文本工具,语音预览。");
+      await ttsSpeak(t("ttsPreviewSentence"));
     } finally {
       setTimeout(() => (previewing = false), 1200);
     }
@@ -83,16 +92,16 @@
 </script>
 
 <section class="section">
-  <div class="section-label">语音播报</div>
+  <div class="section-label">{t("ttsSection")}</div>
 
   <div class="row toggle-row">
-    <span>启用语音</span>
+    <span>{t("enableVoice")}</span>
     <button
       class="toggle"
       class:on={cfg?.tts_enabled}
       type="button"
       onclick={toggleEnabled}
-      aria-label="启用语音"
+      aria-label={t("enableVoice")}
     >
       <span class="knob"></span>
     </button>
@@ -100,7 +109,7 @@
 
   <div class="sub" class:disabled={!cfg?.tts_enabled}>
     <div class="row stacked">
-      <span class="row-label">引擎</span>
+      <span class="row-label">{t("engine")}</span>
       <div class="seg" role="radiogroup">
         <button
           type="button"
@@ -108,7 +117,7 @@
           class:on={cfg?.engine === "sapi"}
           onclick={() => pickEngine("sapi")}
         >
-          Windows SAPI
+          {t("sapiEngine")}
         </button>
         <button
           type="button"
@@ -116,7 +125,7 @@
           class:on={cfg?.engine === "sherpa"}
           onclick={() => pickEngine("sherpa")}
         >
-          Sherpa AI
+          {t("sherpaEngine")}
         </button>
       </div>
     </div>
@@ -124,12 +133,12 @@
     {#if tts.loading}
       <div class="status info">
         <Loader2 class="spin" />
-        AI 引擎加载中…
+        {t("aiLoading")}
       </div>
     {:else if tts.error}
       <div class="status err">
         <AlertCircle />
-        {tts.error}
+        {maybeT(tts.error)}
       </div>
     {/if}
 
@@ -138,7 +147,7 @@
     {/if}
 
     <label class="row stacked">
-      <span class="row-label">声音</span>
+      <span class="row-label">{t("voice")}</span>
       <div class="select-wrap">
         <select
           onchange={pickVoice}
@@ -146,10 +155,10 @@
           disabled={voices.length === 0}
         >
           {#if voices.length === 0}
-            <option value="">无可用声音</option>
+            <option value="">{t("noVoice")}</option>
           {:else}
             {#each voices as v (v.label)}
-              <option value={v.key ?? ""}>{v.label}</option>
+              <option value={v.key ?? ""}>{maybeT(v.label)}</option>
             {/each}
           {/if}
         </select>
@@ -157,11 +166,11 @@
     </label>
 
     <label class="row stacked">
-      <span class="row-label">输出设备</span>
+      <span class="row-label">{t("outputDevice")}</span>
       <div class="select-wrap">
         <select onchange={pickDevice} value={tts.current_device ?? ""}>
           {#each devices as d (d.label)}
-            <option value={d.key ?? ""}>{d.label}</option>
+            <option value={d.key ?? ""}>{maybeT(d.label)}</option>
           {/each}
         </select>
       </div>
@@ -169,7 +178,7 @@
 
     <p class="hint">
       <span class="hint-mark">//</span>
-      路由到 VRChat 麦克风需配合虚拟音频线缆(如 CABLE Input)作为输出设备
+      {t("routingHint")}
     </p>
 
     <div class="actions">
@@ -181,17 +190,17 @@
         onclick={preview}
       >
         <Play />
-        {previewing ? "播放中…" : "试听"}
+        {previewing ? t("playing") : t("preview")}
       </button>
       <button
         class="preview"
         type="button"
         class:active={refreshing}
-        title="重新扫描音频设备和语音"
+        title={t("refreshDevicesTitle")}
         onclick={refreshChoices}
       >
         <RefreshCw class={refreshing ? "spin" : ""} />
-        刷新设备
+        {t("refreshDevices")}
       </button>
     </div>
   </div>

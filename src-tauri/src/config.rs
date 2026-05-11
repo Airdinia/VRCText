@@ -43,8 +43,14 @@ pub struct Config {
     pub tts_device_sherpa: Option<String>,
     #[serde(default)]
     pub tts_voice_sherpa: Option<String>,
+    #[serde(default = "default_language")]
+    pub language: String,
     #[serde(default)]
     pub history: VecDeque<HistoryEntry>,
+}
+
+fn default_language() -> String {
+    "zh".into()
 }
 
 impl Default for Config {
@@ -60,6 +66,7 @@ impl Default for Config {
             tts_voice_sapi: None,
             tts_device_sherpa: None,
             tts_voice_sherpa: None,
+            language: default_language(),
             history: VecDeque::new(),
         }
     }

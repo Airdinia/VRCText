@@ -133,11 +133,18 @@ fn show_startup_error(msg: &str) {
         MessageBoxW, MB_ICONERROR, MB_OK,
     };
 
+    // Fires before the frontend loads, so we can't read the user's language
+    // preference — show both languages stacked instead.
     let body = format!(
         "VRCText 启动失败:\n\n{msg}\n\n\
          如果错误提到 WebView2,请安装 Microsoft WebView2 Runtime:\n\
          https://go.microsoft.com/fwlink/p/?LinkId=2124703\n\n\
-         (Win11 默认已安装;部分老版本 Win10 需要手动安装)"
+         (Win11 默认已安装;部分老版本 Win10 需要手动安装)\n\n\
+         ────────────────────────\n\n\
+         VRCText failed to start:\n\n{msg}\n\n\
+         If the error mentions WebView2, install the Microsoft WebView2 Runtime:\n\
+         https://go.microsoft.com/fwlink/p/?LinkId=2124703\n\n\
+         (Win11 ships with it; some older Win10 builds need to install it manually)"
     );
     let body_w: Vec<u16> = body.encode_utf16().chain(std::iter::once(0)).collect();
 
@@ -145,7 +152,7 @@ fn show_startup_error(msg: &str) {
         MessageBoxW(
             None,
             PCWSTR(body_w.as_ptr()),
-            w!("VRCText 启动失败"),
+            w!("VRCText 启动失败 / Startup failed"),
             MB_OK | MB_ICONERROR,
         );
     }

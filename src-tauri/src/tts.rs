@@ -41,12 +41,14 @@ use crate::download::ModelKind;
 /// reads better in the picker than "zf_001". Advanced users can still set
 /// any sid 0..=102 by hand-editing `tts_voice_sherpa` in config.toml.
 const CURATED_KOKORO_SPEAKERS: &[(i32, &str)] = &[
-    (3, "女声 · zf_001"),
+    (3, "Female · zf_001"),
 ];
 
 const MMSYSERR_NOERROR: u32 = 0;
 const DEVICE_DEFAULT: u32 = u32::MAX;
-const DEFAULT_LABEL: &str = "系统默认";
+// Token form — the frontend resolves it via `maybeT()` so the label flips
+// with the UI language. See src/lib/i18n.svelte.ts.
+const DEFAULT_LABEL: &str = "@i18n:systemDefault";
 const SPCAT_VOICES: &str = r"HKEY_LOCAL_MACHINE\SOFTWARE\Microsoft\Speech\Voices";
 
 /// A selectable item (audio device or voice) rendered in the settings UI.
@@ -210,7 +212,7 @@ pub struct LoadingEngine {
 
 impl LoadingEngine {
     pub fn loading() -> Self {
-        Self { detail: "AI 引擎加载中…".into() }
+        Self { detail: "@i18n:engineLoading".into() }
     }
     pub fn failed(msg: String) -> Self {
         Self { detail: msg }
@@ -267,7 +269,7 @@ pub fn load_sherpa_async(preferred_key: Option<String>) -> Receiver<Result<Loade
 }
 
 fn load_sherpa_sync(preferred_key: Option<&str>) -> Result<LoadedSherpa, String> {
-    let dir = crate::config::models_dir().ok_or("无法解析模型目录")?;
+    let dir = crate::config::models_dir().ok_or("@i18n:errModelsDir")?;
     // Distinguish "no models on disk" from "models exist but won't load".
     // The first is the normal first-run state and the UI should prompt
     // for a download; the second is a real failure and the UI should
@@ -278,10 +280,10 @@ fn load_sherpa_sync(preferred_key: Option<&str>) -> Result<LoadedSherpa, String>
             .map(|mut i| i.next().is_none())
             .unwrap_or(true)
     {
-        return Err("未检测到 AI 模型,请先在下方下载".to_string());
+        return Err("@i18n:errNoModel".to_string());
     }
     let (tts, resolved) = load_pack_by_key(&dir, preferred_key)
-        .ok_or_else(|| "模型文件存在但加载失败,可能是文件损坏".to_string())?;
+        .ok_or_else(|| "@i18n:errLoadFailed".to_string())?;
     let rate = tts.sample_rate() as u32;
     Ok(LoadedSherpa {
         tts: Arc::new(tts),
@@ -390,7 +392,7 @@ impl SherpaEngine {
         let dev = open_output_for(device, buffer.clone());
         let (stream, device_sample_rate, device_channels, init_error) = match dev {
             Some(d) => (Some(d.stream), d.sample_rate, d.channels, None),
-            None => (None, 48000, 2, Some("打不开默认音频输出设备".into())),
+            None => (None, 48000, 2, Some("@i18n:errAudioDefault".into())),
         };
         Self {
             tts: Some(loaded.tts),
@@ -416,7 +418,7 @@ impl SherpaEngine {
     ) -> InitOutcome {
         let Some(models_dir) = crate::config::models_dir() else {
             return InitOutcome {
-                error: Some("无法解析 %APPDATA%\\vrctext\\models".into()),
+                error: Some("@i18n:errAppDataModels".into()),
                 ..InitOutcome::empty()
             };
         };
@@ -429,7 +431,7 @@ impl SherpaEngine {
         }
         let Some((tts, voice_key)) = load_pack_by_key(&models_dir, None) else {
             return InitOutcome {
-                error: Some("模型文件存在但加载失败，可能是文件损坏".into()),
+                error: Some("@i18n:errLoadFailed".into()),
                 ..InitOutcome::empty()
             };
         };
@@ -437,7 +439,7 @@ impl SherpaEngine {
         let device = open_output_for(device, buffer);
         let error = device
             .is_none()
-            .then(|| "打不开默认音频输出设备；请在设置里换一个输出设备".into());
+            .then(|| "@i18n:errAudioDefaultHint".into());
         InitOutcome {
             tts: Some(Arc::new(tts)),
             tts_sample_rate,
@@ -625,7 +627,7 @@ impl TtsEngine for SherpaEngine {
                 resolved
             }
             None => {
-                self.init_error = Some("打不开该音频设备".into());
+                self.init_error = Some("@i18n:errAudioOpen".into());
                 None
             }
         }

@@ -46,6 +46,6 @@ pub fn resend_history(
         .history
         .get(index)
         .map(|e| e.text.clone())
-        .ok_or_else(|| "历史项不存在".to_string())?;
+        .ok_or_else(|| "@i18n:errHistoryMissing".to_string())?;
     dispatch(&text, &state, &app)
 }

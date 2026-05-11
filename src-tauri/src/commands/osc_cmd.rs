@@ -17,7 +17,7 @@ pub fn dispatch(
     state: &AppState,
     app: &AppHandle,
 ) -> Result<(), String> {
-    let target = state.target().ok_or_else(|| "目标地址无效".to_string())?;
+    let target = state.target().ok_or_else(|| "@i18n:errOscTarget".to_string())?;
     let (play_sound, tts_enabled) = {
         let cfg = state.config.lock().unwrap();
         (cfg.play_sound, cfg.tts_enabled)
@@ -25,7 +25,7 @@ pub fn dispatch(
     let pkt = osc::encode_chatbox_input(text, true, play_sound);
     {
         let socket = state.socket.lock().unwrap();
-        osc::send(&socket, target, &pkt).map_err(|_| "OSC 发送失败".to_string())?;
+        osc::send(&socket, target, &pkt).map_err(|_| "@i18n:errOscSend".to_string())?;
         // Match legacy: stop the typing indicator on a successful send even
         // if the heartbeat is still scheduled.
         let typing = osc::encode_chatbox_typing(false);
@@ -58,7 +58,7 @@ pub fn send_message(
 ) -> Result<(), String> {
     let trimmed = text.trim();
     if trimmed.is_empty() {
-        return Err("空消息".into());
+        return Err("@i18n:errEmptyMessage".into());
     }
     dispatch(trimmed, &state, &app)
 }

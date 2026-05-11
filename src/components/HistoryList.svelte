@@ -2,6 +2,7 @@
   import HistoryRow from "./HistoryRow.svelte";
   import { clearHistory } from "../lib/ipc";
   import { store } from "../lib/stores.svelte";
+  import { t } from "../lib/i18n.svelte";
 
   interface Props {
     onResendStatus: (text: string) => void;
@@ -48,7 +49,7 @@
       confirmTimer = null;
     }
     await clearHistory();
-    onResendStatus("已清空历史");
+    onResendStatus(t("clearedToast"));
   }
 
   // Newest first — deque is oldest-first on disk, so we reverse for display.
@@ -62,7 +63,7 @@
   <div class="bar">
     <span class="label">
       <span class="prefix">//</span>
-      HISTORY ·
+      {t("historyHeader")} ·
       <span class="count">{store.history.length}</span>
     </span>
     {#if store.history.length > 0}
@@ -71,12 +72,12 @@
         class="clear"
         class:armed={confirming}
         onclick={onClear}
-        title={confirming ? "再点确认清空" : "清空历史"}
+        title={confirming ? t("confirmClearTitle") : t("clearTitle")}
       >
         {#if confirming}
           <span class="fill" style:--p="{(confirmProgress * 100).toFixed(0)}%"></span>
         {/if}
-        <span class="bracket">{confirming ? "[CONFIRM]" : "[CLEAR]"}</span>
+        <span class="bracket">{confirming ? t("confirmClear") : t("clear")}</span>
       </button>
     {/if}
   </div>
@@ -85,8 +86,8 @@
     {#if store.history.length === 0}
       <div class="empty">
         <div class="empty-mark">{">"}_</div>
-        <div class="empty-line">还没有历史</div>
-        <div class="empty-hint">下面打字,Enter 发送</div>
+        <div class="empty-line">{t("emptyHistory")}</div>
+        <div class="empty-hint">{t("emptyHint")}</div>
       </div>
     {:else}
       {#each reversed as { entry, index } (index + ":" + entry.ts)}

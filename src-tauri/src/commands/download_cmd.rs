@@ -59,7 +59,7 @@ pub fn download_pack(
         if let Some(prev) = active.as_ref() {
             let snap = prev.snapshot();
             if !snap.done {
-                return Err("已有下载在进行中".into());
+                return Err("@i18n:dlAlreadyRunning".into());
             }
         }
         let downloader = ModelDownloader::start(k, dir);
@@ -151,7 +151,7 @@ pub fn delete_models() -> Result<(), String> {
     if !dir.exists() {
         return Ok(());
     }
-    std::fs::remove_dir_all(&dir).map_err(|e| format!("删除失败: {e}"))?;
+    std::fs::remove_dir_all(&dir).map_err(|e| format!("@i18n:dlDeleteFail|{e}"))?;
     Ok(())
 }
 

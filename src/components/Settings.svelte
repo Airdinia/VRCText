@@ -1,7 +1,8 @@
 <script lang="ts">
   import { X, AlertCircle } from "lucide-svelte";
-  import { savePartialConfig } from "../lib/ipc";
+  import { savePartialConfig, type Lang } from "../lib/ipc";
   import { store } from "../lib/stores.svelte";
+  import { t, setLanguage } from "../lib/i18n.svelte";
   import TtsSection from "./TtsSection.svelte";
 
   interface Props {
@@ -40,19 +41,24 @@
     if (n === cfg?.port) return;
     await savePartialConfig({ port: n });
   }
+
+  async function pickLang(lang: Lang) {
+    if (cfg?.language === lang) return;
+    await setLanguage(lang);
+  }
 </script>
 
-<button class="scrim" type="button" onclick={onClose} aria-label="关闭设置"></button>
+<button class="scrim" type="button" onclick={onClose} aria-label={t("closeSettings")}></button>
 <!-- svelte-ignore a11y_no_noninteractive_element_to_interactive_role -->
-<aside class="drawer" role="dialog" aria-label="设置">
+<aside class="drawer" role="dialog" aria-label={t("settings")}>
   <header class="dh">
-    <h2>设置</h2>
+    <h2>{t("settings")}</h2>
     <button
       class="close"
       type="button"
       onclick={onClose}
-      title="关闭"
-      aria-label="关闭"
+      title={t("close")}
+      aria-label={t("close")}
     >
       <X />
     </button>
@@ -60,10 +66,34 @@
 
   <div class="body">
     <section class="section">
-      <div class="section-label">OSC 目标</div>
+      <!-- Hardcoded bilingual so an English user looking at the default
+           zh UI can still recognize the language switch. -->
+      <div class="section-label">语言 / Language</div>
+      <div class="seg" role="radiogroup" aria-label={t("language")}>
+        <button
+          type="button"
+          class="seg-btn"
+          class:on={cfg?.language !== "en"}
+          onclick={() => pickLang("zh")}
+        >
+          中文
+        </button>
+        <button
+          type="button"
+          class="seg-btn"
+          class:on={cfg?.language === "en"}
+          onclick={() => pickLang("en")}
+        >
+          English
+        </button>
+      </div>
+    </section>
+
+    <section class="section">
+      <div class="section-label">{t("oscTarget")}</div>
       <div class="rows">
         <label class="row">
-          <span class="row-label">IP 地址</span>
+          <span class="row-label">{t("ipAddress")}</span>
           <input
             type="text"
             bind:value={ipDraft}
@@ -73,7 +103,7 @@
           />
         </label>
         <label class="row">
-          <span class="row-label">端口</span>
+          <span class="row-label">{t("port")}</span>
           <input
             type="text"
             class:error={!portValid}
@@ -84,7 +114,7 @@
           />
           {#if !portValid}
             <div class="err">
-              <AlertCircle /> 端口必须是 1-65535 之间的整数
+              <AlertCircle /> {t("portError")}
             </div>
           {/if}
         </label>
@@ -237,5 +267,29 @@
     width: 10px;
     height: 10px;
     stroke-width: 1.5;
+  }
+
+  /* Language segmented switch — mirrors the engine picker in TtsSection */
+  .seg {
+    display: flex;
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: var(--r-sm);
+    padding: 2px;
+    gap: 2px;
+  }
+  .seg-btn {
+    flex: 1;
+    padding: 4px 8px;
+    font-size: 11.5px;
+    font-weight: 500;
+    color: var(--text-muted);
+    background: transparent;
+    border-radius: var(--r-sm);
+    transition: background 120ms, color 120ms;
+  }
+  .seg-btn.on {
+    background: var(--accent);
+    color: var(--accent-text);
   }
 </style>
