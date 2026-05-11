@@ -1,0 +1,148 @@
+/* VRCText — Mono Terminal design tokens
+ * Designer brief: pure black + neon green accent + monospace.
+ * All radii are sharp (2px). Letter-spacing on labels gives the
+ * terminal-CLI feel without leaning into outright skeuomorphism.
+ */
+
+/* Bundled web fonts.
+ * JetBrains Mono — Latin / CLI feel. Loaded via @fontsource which splits
+ *   the font by Unicode range; the browser only fetches the chunks it
+ *   actually needs (~30 KB for Latin alone, more if you type cyrillic).
+ * SarasaUiSC-Regular — CJK glyphs in Sarasa Gothic's Latin-mono-friendly
+ *   design. The "subsetted-fonts" package chunks it into ~98 woff2 slices
+ *   keyed by Unicode block; ordinary Chinese chat pulls just 5–15 of them
+ *   on demand (~200–500 KB total) instead of the full ~7 MB TTF.
+ */
+@import "@fontsource/jetbrains-mono/400.css";
+@import "subsetted-fonts/SarasaUiSC-Regular/SarasaUiSC-Regular.css";
+
+:root {
+  /* Surfaces */
+  --bg: #000000;
+  --surface: #050505;
+  --card: #0c0c0c;
+  --card-hover: #131313;
+  --card-active: #1a1a1a;
+
+  /* Borders */
+  --border: rgba(255, 255, 255, 0.06);
+  --border-strong: rgba(80, 255, 170, 0.18);
+
+  /* Text */
+  --text: #e8efe9;
+  --text-muted: rgba(232, 239, 233, 0.48);
+  --text-faint: rgba(232, 239, 233, 0.28);
+
+  /* Accent (neon green oklch) + state */
+  --accent: oklch(0.84 0.2 145);
+  --accent-text: #0a0a0a;
+  --accent-soft: oklch(0.84 0.2 145 / 0.1);
+  --accent-ring: oklch(0.84 0.2 145 / 0.45);
+  --danger: oklch(0.72 0.2 25);
+  --warn: oklch(0.82 0.16 80);
+  --ok: oklch(0.84 0.2 145);
+
+  /* Geometry — sharp */
+  --r-sm: 2px;
+  --r-md: 2px;
+  --r-lg: 2px;
+  --r-pill: 999px;
+
+  /* Shadows */
+  --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.32);
+  --shadow-md: 0 4px 14px -8px rgba(0, 0, 0, 0.5);
+  --shadow-lg: 0 24px 60px -12px rgba(0, 0, 0, 0.6),
+    0 8px 24px -8px rgba(0, 0, 0, 0.5);
+
+  /* Typography. Order matters: JetBrains Mono claims Latin first; SarasaUiSC
+   * picks up CJK ranges via its own @font-face unicode-range rules. System
+   * fallbacks at the tail cover anything neither bundled font ships. */
+  --font-ui: "JetBrains Mono", "Fira Code", "Cascadia Code", ui-monospace,
+    "SarasaUiSC-Regular", "Sarasa Mono SC", "Microsoft YaHei UI",
+    "Microsoft YaHei", monospace;
+  --font-features: "calt", "ss01";
+}
+
+* {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+html,
+body {
+  height: 100%;
+  overflow: hidden;
+}
+
+body {
+  font-family: var(--font-ui);
+  font-feature-settings: var(--font-features);
+  font-size: 13px;
+  line-height: 1.45;
+  color: var(--text);
+  background: var(--bg);
+  -webkit-font-smoothing: antialiased;
+  -webkit-user-select: none;
+  user-select: none;
+  -webkit-tap-highlight-color: transparent;
+}
+
+#app {
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  position: relative;
+  overflow: hidden;
+}
+
+input,
+textarea,
+select {
+  font: inherit;
+  color: inherit;
+  -webkit-user-select: text;
+  user-select: text;
+}
+
+button {
+  font: inherit;
+  color: inherit;
+  background: none;
+  border: 0;
+  cursor: default;
+  padding: 0;
+}
+
+/* Webkit scrollbar — thin, accent-tinted on hover */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  background: var(--border-strong);
+  border-radius: var(--r-pill);
+}
+::-webkit-scrollbar-thumb:hover {
+  background: var(--accent);
+}
+
+/* Shared keyframes used across components */
+@keyframes vrc-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+@keyframes vrc-toast-in {
+  from {
+    transform: translateX(-50%) translateY(6px);
+    opacity: 0;
+  }
+  to {
+    transform: translateX(-50%) translateY(0);
+    opacity: 1;
+  }
+}

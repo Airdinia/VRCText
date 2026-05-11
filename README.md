@@ -1,6 +1,6 @@
 # VRCText
 
-极简、轻量的 **VRChat OSC 聊天框发送器 + 语音朗读** Windows 工具。打字发到头顶气泡，同时可选朗读。单 exe 约 **22 MB**，双击即开，零运行时依赖。
+极简、轻量的 **VRChat OSC 聊天框发送器 + 语音朗读** Windows 工具。打字发到头顶气泡，同时可选朗读。单 exe 约 **20 MB**，双击即开，依赖系统自带的 WebView2 Runtime（Win11 默认安装、Win10 大多数已有）。
 
 ---
 
@@ -94,10 +94,45 @@
 
 ## 已知限制
 
-- **Windows only**（用了 SAPI / WaveOut / winsock）
+- **Windows only**（用了 SAPI / WaveOut / winsock / IMM32）
+- 需要系统已安装 **Microsoft WebView2 Runtime**（Win11 默认有；Win10 极少数老机器可能缺,启动失败时去 [microsoft.com/edge/webview2](https://developer.microsoft.com/en-us/microsoft-edge/webview2/) 装一下）
 - 不自带虚拟音频线缆（见上）
 - 未签名 `.exe`，SmartScreen 会提示（无害，可跳过）
 - AI 引擎首次使用需联网下载模型
+
+---
+
+## 从源码构建
+
+技术栈:Tauri 2 (Rust 后端) + Svelte 5 + TypeScript + Vite。
+
+```sh
+# 一次性
+rustup target add x86_64-pc-windows-msvc
+npm install
+
+# 开发(热重载)
+npm run tauri dev
+
+# 出包(必须用 tauri-cli,不要直接 cargo build)
+npm run tauri build -- --no-bundle
+# 产物在 src-tauri\target\release\vrctext.exe
+```
+
+`bundle.active: false` 让构建跳过 NSIS / MSI,只产出独立 `.exe`。如需安装包,在
+`src-tauri/tauri.conf.json` 改 `"active": true` 并把 `"targets"` 设为 `"nsis"`。
+
+> **注意**:必须用 `npm run tauri build`(走 tauri-cli)来出 release。直接 `cargo build --release`
+> 会让 WebView 仍然指向 `devUrl: http://localhost:1420`,运行时显示空白页 ——
+> 因为 `cargo build` 不参与 tauri-cli 的 dev/release URL 切换逻辑。
+>
+> 想绕过 tauri-cli 出 .exe 的话,要么去掉 `devUrl`,要么在 `tauri.conf.json`
+> 的 `app.windows[0]` 里写 `"url": "index.html"` 显式强制 frontendDist。
+>
+> 另:Svelte 5 的 runes(`$state` / `$derived` / `$effect`)只在 `.svelte` 和
+> `.svelte.ts`/`.svelte.js` 文件里被编译。普通 `.ts` 文件里写 `$state(...)`
+> 在 runtime 会报 `ReferenceError`。这就是为什么 store 文件命名为
+> [src/lib/stores.svelte.ts](src/lib/stores.svelte.ts) 而非 `.ts`。
 
 ---
 
