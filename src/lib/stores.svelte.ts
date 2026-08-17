@@ -124,12 +124,15 @@ export function pushToast(text: string, tone: "info" | "error" = "info") {
 
 /** Wire the bridge listeners. Call once from the root component. */
 export async function initStore(): Promise<() => void> {
-  // Listeners are registered BEFORE the initial snapshot fetches. An event
-  // that fires in between (e.g. the sherpa engine finishing its async load
-  // during app init) would otherwise be lost, leaving the UI stuck on the
-  // stale snapshot until the next unrelated event. The fetches are issued
-  // after registration, so their results are never older than a missed
-  // event.
+  // Listeners are registered BEFORE the initial snapshot fetches so events
+  // fired during init aren't lost. One residual race needs a guard: the
+  // TTS worker publishes on its own schedule (its async sherpa load can
+  // finish at any moment), so a `tts-status` event may arrive while the
+  // snapshot fetch is still in flight — the snapshot, taken earlier on the
+  // backend, must then not roll the store back. Config / history /
+  // download events all require user interaction and can't fire this
+  // early, so only tts needs the flag.
+  let ttsEventSeen = false;
   const unlistenConfig = await onConfigChanged((c) => {
     store.config = c;
   });
@@ -137,6 +140,7 @@ export async function initStore(): Promise<() => void> {
     store.history = await getHistory();
   });
   const unlistenTts = await onTtsStatus((s) => {
+    ttsEventSeen = true;
     store.tts = s;
   });
   const unlistenDl = await onDownloadProgress((p) => {
@@ -171,7 +175,7 @@ export async function initStore(): Promise<() => void> {
   ]);
   store.config = cfg;
   store.history = hist;
-  store.tts = tts;
+  if (!ttsEventSeen) store.tts = tts;
   store.installedPacks = packs;
   store.loaded = true;
 

@@ -3,14 +3,26 @@
 //! here. Heavy mutexes are kept narrow — lock only for the read/write, not
 //! across IO.
 
-use std::net::UdpSocket;
+use std::net::{IpAddr, SocketAddr, UdpSocket};
 use std::sync::{Arc, Mutex};
+use std::time::{Duration, Instant};
 
 use tauri::{AppHandle, Emitter};
 
 use crate::config::Config;
 use crate::download::ModelDownloader;
 use crate::tts_worker::TtsHandle;
+
+/// How long a hostname-resolution result (success or failure) is trusted
+/// before `target()` calls getaddrinfo again.
+const DNS_TTL: Duration = Duration::from_secs(30);
+
+/// Cached outcome of the last hostname resolution — see `AppState::target`.
+struct ResolvedHost {
+    host: String,
+    ip: Option<IpAddr>,
+    at: Instant,
+}
 
 pub struct AppState {
     pub config: Mutex<Config>,
@@ -24,6 +36,11 @@ pub struct AppState {
     /// download_cmd watcher thread can hold a reference for the duration of
     /// the download without racing the AppState lock.
     pub download: Arc<Mutex<Option<ModelDownloader>>>,
+    /// Memo for `target()`'s hostname resolution, failures included —
+    /// getaddrinfo blocks (for seconds when the name doesn't resolve) and
+    /// the typing heartbeat calls `target()` every 1.5 s. IP literals
+    /// never touch this.
+    resolved_host: Mutex<Option<ResolvedHost>>,
 }
 
 impl AppState {
@@ -37,32 +54,38 @@ impl AppState {
             typing_active: Mutex::new(false),
             tts,
             download: Arc::new(Mutex::new(None)),
+            resolved_host: Mutex::new(None),
         })
     }
 
-    pub fn target(&self) -> Option<std::net::SocketAddr> {
+    pub fn target(&self) -> Option<SocketAddr> {
         let (host, port) = {
             let cfg = self.config.lock().ok()?;
             (cfg.ip.clone(), cfg.port)
         };
         // Fast path: IP literal — the overwhelmingly common case, no DNS.
-        if let Ok(ip) = host.parse::<std::net::IpAddr>() {
-            return Some(std::net::SocketAddr::new(ip, port));
+        if let Ok(ip) = host.parse::<IpAddr>() {
+            return Some(SocketAddr::new(ip, port));
         }
         // The settings UI also accepts hostnames ("localhost", "gamingpc.local"
-        // for LAN setups) — resolve through the OS. Prefer IPv4: our socket is
-        // bound v4 and VRChat listens on the v4 stack. The OS caches lookups,
-        // so the per-send cost for hostname users is negligible.
-        use std::net::ToSocketAddrs;
-        let addrs = (host.as_str(), port).to_socket_addrs().ok()?;
-        let mut fallback = None;
-        for a in addrs {
-            if a.is_ipv4() {
-                return Some(a);
+        // for LAN setups). Resolution runs on the send/typing path, so the
+        // outcome — including "did not resolve" — is memoised for DNS_TTL;
+        // otherwise an unreachable name would block every 1.5 s heartbeat.
+        {
+            let cache = self.resolved_host.lock().ok()?;
+            if let Some(r) = cache.as_ref() {
+                if r.host == host && r.at.elapsed() < DNS_TTL {
+                    return r.ip.map(|ip| SocketAddr::new(ip, port));
+                }
             }
-            fallback.get_or_insert(a);
         }
-        fallback
+        let ip = resolve_ipv4(&host, port);
+        *self.resolved_host.lock().ok()? = Some(ResolvedHost {
+            host,
+            ip,
+            at: Instant::now(),
+        });
+        ip.map(|ip| SocketAddr::new(ip, port))
     }
 
     /// Convenience for the watcher thread that polls `ModelDownloader::snapshot()`.
@@ -81,4 +104,17 @@ impl AppState {
         };
         let _ = app.emit("config-changed", &snapshot);
     }
+}
+
+/// Resolve a hostname to an IPv4 address. IPv6 results are discarded — the
+/// OSC socket is bound to `0.0.0.0`, so sending to a v6 target can only
+/// fail; treating v6-only names as unresolvable surfaces the clearer
+/// "invalid target" error instead of a generic send failure.
+fn resolve_ipv4(host: &str, port: u16) -> Option<IpAddr> {
+    use std::net::ToSocketAddrs;
+    (host, port)
+        .to_socket_addrs()
+        .ok()?
+        .find(|a| a.is_ipv4())
+        .map(|a| a.ip())
 }

@@ -156,19 +156,21 @@ fn watch(
 #[tauri::command]
 pub fn delete_models(state: State<'_, AppState>) -> Result<(), String> {
     // Refuse while a download is writing into the directory — deleting
-    // under it would corrupt the extract and race the verifier.
-    {
-        let active = state.download.lock().unwrap();
-        if let Some(d) = active.as_ref() {
-            if !d.snapshot().done {
-                return Err("@i18n:dlAlreadyRunning".into());
-            }
+    // under it would corrupt the extract and race the verifier. The guard
+    // stays held across the removal (up to a couple of seconds for the
+    // Kokoro pack) so a concurrent download_pack serialises behind the
+    // delete instead of starting to write mid-teardown.
+    let guard = state.download.lock().unwrap();
+    if let Some(d) = guard.as_ref() {
+        if !d.snapshot().done {
+            return Err("@i18n:dlAlreadyRunning".into());
         }
     }
     let dir = models_dir().ok_or_else(|| "no models dir".to_string())?;
     if dir.exists() {
         std::fs::remove_dir_all(&dir).map_err(|e| format!("@i18n:dlDeleteFail|{e}"))?;
     }
+    drop(guard);
     // The live engine may still hold the deleted pack in RAM and keep
     // reporting "available" (preview would happily play from memory).
     // Kick a reload so status honestly flips to "no model — download below".

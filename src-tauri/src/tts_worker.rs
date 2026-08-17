@@ -257,6 +257,12 @@ fn run(
                     let _ = reply.send(engine.voice_choices());
                 }
                 TtsCmd::ApplyDevice { key, reply } => {
+                    // A load in flight means the live engine is a
+                    // placeholder — remember the pick so the completion
+                    // path binds it instead of the stale one.
+                    if sherpa_load.is_some() {
+                        pending_device = key.clone();
+                    }
                     let resolved = engine.apply_device(key.as_deref());
                     {
                         let mut s = status.lock().unwrap();
@@ -266,6 +272,14 @@ fn run(
                     publish_only_event(&app, &status);
                 }
                 TtsCmd::ApplyVoice { key, reply } => {
+                    // Restart an in-flight load with the new voice — the
+                    // placeholder engine can't apply it, and letting the
+                    // old load finish would resurrect the previous
+                    // speaker. Dropping the old receiver discards its
+                    // result harmlessly.
+                    if sherpa_load.is_some() {
+                        sherpa_load = Some(load_sherpa_async(key.clone()));
+                    }
                     let resolved = engine.apply_voice(key.as_deref());
                     {
                         let mut s = status.lock().unwrap();

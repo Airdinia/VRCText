@@ -21,6 +21,8 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 - Deleting models now unloads the in-memory AI engine so status honestly reports "no model" (previewing no longer plays a deleted voice from RAM), and deletion is blocked while a download is writing into the directory.
 - The composer textarea height now tracks programmatic text changes (history navigation ↑/↓, append-from-history, clear-on-send), not just typed input.
 
+- Device/voice selections made while the AI engine is still loading are no longer rolled back once the load completes — the load restarts with the new voice and binds the newly picked device.
+
 ### Changed
 - Download, delete, and device-refresh failures surface as toasts instead of logging silently to the console.
 
