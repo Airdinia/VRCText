@@ -51,6 +51,18 @@ pub fn run() {
             // user does not see a brief un-pinned flash.
             if let Some(window) = app.get_webview_window("main") {
                 let _ = window.set_always_on_top(always_on_top);
+                // Stamp the taskbar + title-bar icons via WM_SETICON — see
+                // `win::stamp_window_icon` for why relying on the exe
+                // resource alone sometimes leaves a blank taskbar icon.
+                #[cfg(windows)]
+                {
+                    use raw_window_handle::{HasWindowHandle, RawWindowHandle};
+                    if let Ok(handle) = window.window_handle() {
+                        if let RawWindowHandle::Win32(w) = handle.as_raw() {
+                            win::stamp_window_icon(w.hwnd.get());
+                        }
+                    }
+                }
                 // Run with `VRCTEXT_DEVTOOLS=1` to open DevTools on launch.
                 // Compiled out of release builds — pass `--features devtools`
                 // when running `cargo tauri dev` to get the inspector.

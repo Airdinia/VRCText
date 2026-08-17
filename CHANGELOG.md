@@ -11,6 +11,7 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 - Expand the curated Kokoro voice picker from 1 to 13 speakers (3 English, 5 Chinese female, 5 Chinese male). Any of the 103 sids can still be set by hand-editing `tts_voice_sherpa`.
 
 ### Fixed
+- Stamp the taskbar (big) and title-bar (small) window icons explicitly at startup via `WM_SETICON`, loading them from the exe's embedded icon resource — tao only ever sets the small icon, so the taskbar icon fell back to the shell icon cache and occasionally showed up blank after launch.
 - The AI engine's async load no longer triggers a redundant synchronous model reload on completion — previously this could double the multi-second load time and block the TTS worker, and the audio device was opened twice back to back.
 - TTS status now clears stale device/voice names after an engine switch, and toggling the speaker while the AI engine is still loading shows the loading state instead of rendering it as an error.
 - Frontend event listeners are registered before the initial state fetch, so a status event firing during app init (e.g. the AI engine finishing its load) can no longer be lost, which left the UI stuck on "loading".
