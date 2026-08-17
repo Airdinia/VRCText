@@ -112,8 +112,10 @@ fn run(
     let mut engine: Box<dyn TtsEngine> = Box::new(SapiEngine::new());
     let mut sherpa_load: Option<mpsc::Receiver<Result<LoadedSherpa, String>>> = None;
     let mut current_engine: Engine = Engine::Sapi;
+    // Device to bind once an in-flight sherpa load completes. There is no
+    // `pending_voice` counterpart: the voice preference is handed to
+    // `load_sherpa_async` itself, which resolves it during the load.
     let mut pending_device: Option<String> = None;
-    let mut pending_voice: Option<String> = None;
 
     if matches!(initial_engine, Engine::Sapi) {
         // Apply persisted device/voice once and use the resolved keys for
@@ -133,9 +135,8 @@ fn run(
     } else {
         // Engine::Sherpa: kick off async load, transient LoadingEngine in the meantime.
         engine = Box::new(LoadingEngine::loading());
-        sherpa_load = Some(load_sherpa_async(initial_voice.clone()));
-        pending_device = initial_device.clone();
-        pending_voice = initial_voice.clone();
+        sherpa_load = Some(load_sherpa_async(initial_voice));
+        pending_device = initial_device;
         current_engine = Engine::Sherpa;
         publish_status(&app, &status, "loading", false, true, None, None, None);
     }
@@ -145,13 +146,13 @@ fn run(
         if let Some(rx_load) = &sherpa_load {
             match rx_load.try_recv() {
                 Ok(Ok(loaded)) => {
-                    let dev_for_loaded = pending_device.as_deref();
-                    let mut new_engine = SherpaEngine::from_loaded(loaded, dev_for_loaded);
-                    if let Some(v) = pending_voice.as_deref() {
-                        new_engine.apply_voice(Some(v));
-                    }
+                    // The async loader already resolved `pending_voice` (or
+                    // fell back to the first installed pack) — re-applying
+                    // the saved voice here would only trigger a redundant
+                    // synchronous model reload when the key didn't resolve.
+                    let cur_voice = loaded.voice_key.clone();
+                    let mut new_engine = SherpaEngine::from_loaded(loaded);
                     let cur_dev = new_engine.apply_device(pending_device.as_deref());
-                    let cur_voice = new_engine.apply_voice(pending_voice.as_deref());
                     let avail = new_engine.available();
                     let detail = new_engine.unavailable_detail();
                     engine = Box::new(new_engine);
@@ -200,12 +201,16 @@ fn run(
                     let cur_voice = engine.apply_voice(voice.as_deref());
                     let avail = engine.available();
                     let detail = engine.unavailable_detail();
+                    // If a sherpa load is still in flight, keep reporting
+                    // the loading state — otherwise the LoadingEngine's
+                    // "@i18n:engineLoading" detail renders as an error.
+                    let loading = sherpa_load.is_some();
                     publish_status(
                         &app,
                         &status,
-                        engine_label(current_engine, sherpa_load.is_some()),
+                        engine_label(current_engine, loading),
                         avail,
-                        false,
+                        loading,
                         detail,
                         cur_dev,
                         cur_voice,
@@ -224,7 +229,6 @@ fn run(
                             let cur_voice = engine.apply_voice(voice.as_deref());
                             sherpa_load = None;
                             pending_device = None;
-                            pending_voice = None;
                             publish_status(
                                 &app,
                                 &status,
@@ -238,9 +242,8 @@ fn run(
                         }
                         Engine::Sherpa => {
                             engine = Box::new(LoadingEngine::loading());
-                            sherpa_load = Some(load_sherpa_async(voice.clone()));
+                            sherpa_load = Some(load_sherpa_async(voice));
                             pending_device = device;
-                            pending_voice = voice;
                             publish_status(
                                 &app, &status, "loading", false, true, None, None, None,
                             );
@@ -274,9 +277,8 @@ fn run(
                 TtsCmd::ReloadSherpa { device, voice } => {
                     if matches!(current_engine, Engine::Sherpa) {
                         engine = Box::new(LoadingEngine::loading());
-                        sherpa_load = Some(load_sherpa_async(voice.clone()));
+                        sherpa_load = Some(load_sherpa_async(voice));
                         pending_device = device;
-                        pending_voice = voice;
                         publish_status(
                             &app, &status, "loading", false, true, None, None, None,
                         );
@@ -303,7 +305,7 @@ fn engine_label(engine: Engine, loading: bool) -> &'static str {
     }
 }
 
-#[allow(clippy::too_many_arguments, non_snake_case)]
+#[allow(clippy::too_many_arguments)]
 fn publish_status(
     app: &AppHandle,
     status: &Arc<Mutex<TtsStatus>>,
@@ -320,12 +322,11 @@ fn publish_status(
         s.available = available;
         s.loading = loading;
         s.error = error;
-        if current_device.is_some() {
-            s.current_device = current_device;
-        }
-        if current_voice.is_some() {
-            s.current_voice = current_voice;
-        }
+        // Unconditional: every caller passes the engine's true current
+        // routing. Keeping the old value on `None` used to leave a stale
+        // device/voice name displayed after engine switches.
+        s.current_device = current_device;
+        s.current_voice = current_voice;
     }
     publish_only_event(app, status);
 }

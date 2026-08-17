@@ -124,18 +124,12 @@ export function pushToast(text: string, tone: "info" | "error" = "info") {
 
 /** Wire the bridge listeners. Call once from the root component. */
 export async function initStore(): Promise<() => void> {
-  const [cfg, hist, tts, packs] = await Promise.all([
-    loadConfig(),
-    getHistory(),
-    ttsStatus(),
-    installedPacks(),
-  ]);
-  store.config = cfg;
-  store.history = hist;
-  store.tts = tts;
-  store.installedPacks = packs;
-  store.loaded = true;
-
+  // Listeners are registered BEFORE the initial snapshot fetches. An event
+  // that fires in between (e.g. the sherpa engine finishing its async load
+  // during app init) would otherwise be lost, leaving the UI stuck on the
+  // stale snapshot until the next unrelated event. The fetches are issued
+  // after registration, so their results are never older than a missed
+  // event.
   const unlistenConfig = await onConfigChanged((c) => {
     store.config = c;
   });
@@ -160,7 +154,7 @@ export async function initStore(): Promise<() => void> {
 
   // Track VRChat-alive presence — every received packet refreshes the
   // status timer. As long as VRChat keeps broadcasting (~60 Hz, throttled
-  // to 1 event per 500 ms by the backend) the dot stays "ok". When the
+  // to 1 event per second by the backend) the dot stays "ok". When the
   // stream stops, we fade to idle 3 s after the last packet.
   // An active "error" wins over an alive heartbeat for the hold duration
   // so failures don't get silently swallowed.
@@ -168,6 +162,18 @@ export async function initStore(): Promise<() => void> {
     if (store.oscStatus === "error") return;
     setOscStatus("ok");
   });
+
+  const [cfg, hist, tts, packs] = await Promise.all([
+    loadConfig(),
+    getHistory(),
+    ttsStatus(),
+    installedPacks(),
+  ]);
+  store.config = cfg;
+  store.history = hist;
+  store.tts = tts;
+  store.installedPacks = packs;
+  store.loaded = true;
 
   return () => {
     unlistenConfig();

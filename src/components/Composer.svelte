@@ -31,6 +31,18 @@
     return stopTyping;
   });
 
+  // Auto-grow up to 72px (≈3 lines), then internal scroll. Reacting to
+  // `text` (instead of only the input event) keeps the height right for
+  // programmatic changes too — history navigation, append-from-history,
+  // clear-on-send. Runs after Svelte has flushed the new value to the DOM,
+  // so scrollHeight is current.
+  $effect(() => {
+    void text;
+    if (!textarea) return;
+    textarea.style.height = "auto";
+    textarea.style.height = Math.min(72, textarea.scrollHeight) + "px";
+  });
+
   // Pick up "append this text" requests from HistoryRow's short-click and
   // splice them in at the textarea caret (or selection range). Mirrors the
   // legacy `append_to_input` flow that used egui's TextEdit cursor state.
@@ -47,11 +59,6 @@
     queueMicrotask(() => {
       textarea?.focus();
       textarea?.setSelectionRange(caret, caret);
-      // Re-grow textarea to fit any new line breaks from the inserted text.
-      if (textarea) {
-        textarea.style.height = "auto";
-        textarea.style.height = Math.min(72, textarea.scrollHeight) + "px";
-      }
     });
     noteKeystroke();
   });
@@ -127,7 +134,6 @@
       text = "";
       historyCursor = null;
       onStatus(t("sentToast"));
-      if (textarea) textarea.style.height = "auto";
     } catch (err) {
       setOscStatus("error");
       onStatus(maybeT(String(err)), "error");
@@ -173,11 +179,7 @@
     }
   }
 
-  function onInput(e: Event) {
-    const el = e.currentTarget as HTMLTextAreaElement;
-    // Auto-grow up to 72px (≈3 lines), then internal scroll.
-    el.style.height = "auto";
-    el.style.height = Math.min(72, el.scrollHeight) + "px";
+  function onInput() {
     if (historyCursor !== null) historyCursor = null;
     noteKeystroke();
   }

@@ -49,6 +49,8 @@
       const [d, v] = await Promise.all([ttsListDevices(), ttsListVoices()]);
       devices = d;
       voices = v;
+    } catch (err) {
+      pushToast(maybeT(String(err)), "error");
     } finally {
       // Visual lag for the spinning icon — too quick and the user can't
       // tell the click registered. Same cosmetic trick as the legacy app.

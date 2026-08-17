@@ -41,9 +41,28 @@ impl AppState {
     }
 
     pub fn target(&self) -> Option<std::net::SocketAddr> {
-        let cfg = self.config.lock().ok()?;
-        let ip: std::net::IpAddr = cfg.ip.parse().ok()?;
-        Some(std::net::SocketAddr::new(ip, cfg.port))
+        let (host, port) = {
+            let cfg = self.config.lock().ok()?;
+            (cfg.ip.clone(), cfg.port)
+        };
+        // Fast path: IP literal — the overwhelmingly common case, no DNS.
+        if let Ok(ip) = host.parse::<std::net::IpAddr>() {
+            return Some(std::net::SocketAddr::new(ip, port));
+        }
+        // The settings UI also accepts hostnames ("localhost", "gamingpc.local"
+        // for LAN setups) — resolve through the OS. Prefer IPv4: our socket is
+        // bound v4 and VRChat listens on the v4 stack. The OS caches lookups,
+        // so the per-send cost for hostname users is negligible.
+        use std::net::ToSocketAddrs;
+        let addrs = (host.as_str(), port).to_socket_addrs().ok()?;
+        let mut fallback = None;
+        for a in addrs {
+            if a.is_ipv4() {
+                return Some(a);
+            }
+            fallback.get_or_insert(a);
+        }
+        fallback
     }
 
     /// Convenience for the watcher thread that polls `ModelDownloader::snapshot()`.

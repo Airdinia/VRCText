@@ -1,7 +1,7 @@
 <script lang="ts">
   import { Check, Download, Trash2, AlertCircle } from "lucide-svelte";
   import { downloadPack, deleteModels, type ModelKindStr } from "../lib/ipc";
-  import { store } from "../lib/stores.svelte";
+  import { store, pushToast } from "../lib/stores.svelte";
   import { t, tf, maybeT, type Key } from "../lib/i18n.svelte";
 
   // Two-step delete confirm
@@ -44,11 +44,12 @@
     try {
       await downloadPack(k);
     } catch (e) {
-      console.error(e);
+      pushToast(maybeT(String(e)), "error");
     }
   }
 
   async function onDelete() {
+    if (downloading) return;
     if (!deleteArmed) {
       deleteConfirmAt = performance.now() + 2000;
       setTimeout(() => {
@@ -61,7 +62,7 @@
       await deleteModels();
       store.installedPacks = [];
     } catch (e) {
-      console.error(e);
+      pushToast(maybeT(String(e)), "error");
     }
   }
 </script>
@@ -132,6 +133,7 @@
       type="button"
       class="del"
       class:armed={deleteArmed}
+      disabled={downloading}
       onclick={onDelete}
     >
       <Trash2 />
@@ -296,6 +298,10 @@
     background: var(--danger);
     color: #000;
     border-color: var(--danger);
+  }
+  .del:disabled {
+    opacity: 0.4;
+    cursor: not-allowed;
   }
   .del :global(svg) {
     width: 10px;

@@ -6,6 +6,23 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## [Unreleased]
 
+### Added
+- OSC target now accepts hostnames (`localhost`, LAN machine names) — previously only IP literals worked even though the settings UI let you type a hostname, so every send failed with "invalid target".
+- Expand the curated Kokoro voice picker from 1 to 13 speakers (3 English, 5 Chinese female, 5 Chinese male). Any of the 103 sids can still be set by hand-editing `tts_voice_sherpa`.
+
+### Fixed
+- The AI engine's async load no longer triggers a redundant synchronous model reload on completion — previously this could double the multi-second load time and block the TTS worker, and the audio device was opened twice back to back.
+- TTS status now clears stale device/voice names after an engine switch, and toggling the speaker while the AI engine is still loading shows the loading state instead of rendering it as an error.
+- Frontend event listeners are registered before the initial state fetch, so a status event firing during app init (e.g. the AI engine finishing its load) can no longer be lost, which left the UI stuck on "loading".
+- Editing the OSC IP/port in settings is no longer wiped when another setting (pin, bell, voice toggle) changes mid-edit.
+- Model downloads now use connect/read timeouts — a stalled connection no longer wedges the downloader ("a download is already in progress") until app restart.
+- Fixed a race where a lingering download watcher could observe, double-report, or wrongly clear a newer download.
+- Deleting models now unloads the in-memory AI engine so status honestly reports "no model" (previewing no longer plays a deleted voice from RAM), and deletion is blocked while a download is writing into the directory.
+- The composer textarea height now tracks programmatic text changes (history navigation ↑/↓, append-from-history, clear-on-send), not just typed input.
+
+### Changed
+- Download, delete, and device-refresh failures surface as toasts instead of logging silently to the console.
+
 ## [0.2.4] - 2026-05-10
 
 ### Changed

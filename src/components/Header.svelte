@@ -104,9 +104,9 @@
     min-width: 0;
   }
   /* Square dot — terminal aesthetic.
-   * Idle (no send yet) shows a flat faint grey, no glow.
-   * "ok" (last send dispatched OK) glows accent green.
-   * "error" (send failed at OS level) glows danger red. */
+   * Idle (no VRChat OSC traffic heard) shows a flat faint grey, no glow.
+   * "ok" (vrc-alive probe heard VRChat broadcasting recently) glows green.
+   * "error" (our send failed at the OS level) glows danger red. */
   .dot {
     width: 7px;
     height: 7px;
@@ -129,9 +129,9 @@
     color: var(--text);
   }
   /* `[OSC 127.0.0.1:9000]` style chip.
-   * Same idle/ok/error tri-state as the dot — when nothing has been sent
-   * yet, the label sits in muted grey; once a packet flies the chip glows
-   * accent green; on send_to() failure it flips red. */
+   * Same idle/ok/error tri-state as the dot — grey while no VRChat OSC
+   * traffic is heard, accent green while the vrc-alive probe sees VRChat
+   * broadcasting, red after a send_to() failure. */
   .osc {
     margin-left: 4px;
     display: inline-flex;

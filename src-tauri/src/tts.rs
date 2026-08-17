@@ -38,10 +38,25 @@ use crate::download::ModelKind;
 ///
 /// The LongMao speakers have no descriptive names — they're anonymized
 /// professional voice actors — so we label them by gender + ordinal, which
-/// reads better in the picker than "zf_001". Advanced users can still set
-/// any sid 0..=102 by hand-editing `tts_voice_sherpa` in config.toml.
+/// reads better in the picker than "zf_001". We surface a curated subset
+/// spanning all three groups (English, Chinese female, Chinese male) so
+/// the picker is useful without scrolling through 103 entries. Advanced
+/// users can still set any sid 0..=102 by hand-editing `tts_voice_sherpa`
+/// in config.toml — the loader parses any `#N`.
 const CURATED_KOKORO_SPEAKERS: &[(i32, &str)] = &[
+    (0, "EN · af_maple"),
+    (1, "EN · af_sol"),
+    (2, "EN · bf_vale"),
     (3, "Female · zf_001"),
+    (4, "Female · zf_002"),
+    (5, "Female · zf_003"),
+    (6, "Female · zf_004"),
+    (7, "Female · zf_005"),
+    (58, "Male · zm_058"),
+    (59, "Male · zm_059"),
+    (60, "Male · zm_060"),
+    (61, "Male · zm_061"),
+    (62, "Male · zm_062"),
 ];
 
 const MMSYSERR_NOERROR: u32 = 0;
@@ -382,29 +397,26 @@ impl SherpaEngine {
     }
 
     /// Attach a pre-loaded model (built on a worker thread via
-    /// `load_sherpa_async`) and open the cpal stream on the current thread.
+    /// `load_sherpa_async`). No audio stream is opened yet — the caller is
+    /// expected to follow up with `apply_device()`, which opens exactly one
+    /// stream and records the resolved device name. (Opening one here too
+    /// used to double-open WASAPI back to back for no benefit.)
     /// Must run on the TTS worker thread — cpal `Stream` is `!Send` so it
     /// must be created on whichever thread will own it for the rest of its
     /// life. Tauri has no equivalent of egui's "UI thread"; we dedicate a
     /// thread to TTS for this reason.
-    pub fn from_loaded(loaded: LoadedSherpa, device: Option<&str>) -> Self {
-        let buffer: Arc<Mutex<VecDeque<f32>>> = Arc::new(Mutex::new(VecDeque::new()));
-        let dev = open_output_for(device, buffer.clone());
-        let (stream, device_sample_rate, device_channels, init_error) = match dev {
-            Some(d) => (Some(d.stream), d.sample_rate, d.channels, None),
-            None => (None, 48000, 2, Some("@i18n:errAudioDefault".into())),
-        };
+    pub fn from_loaded(loaded: LoadedSherpa) -> Self {
         Self {
             tts: Some(loaded.tts),
             tts_sample_rate: loaded.tts_sample_rate,
             current_voice_key: loaded.voice_key,
-            device_sample_rate,
-            device_channels,
-            buffer,
-            stream,
+            device_sample_rate: 48000,
+            device_channels: 2,
+            buffer: Arc::new(Mutex::new(VecDeque::new())),
+            stream: None,
             current_device: None,
             gen_counter: Arc::new(AtomicU64::new(0)),
-            init_error,
+            init_error: None,
         }
     }
 
@@ -593,11 +605,8 @@ impl TtsEngine for SherpaEngine {
                     key: Some(pack.name),
                 }),
                 ModelKind::KokoroMultiLang => {
-                    // Kokoro v1.0 ships 53 speakers but only the Chinese-
-                    // native ones sound natural on zh-with-English text, so
-                    // we expose a curated subset. Users who want another
-                    // sid can still set it by editing `tts_voice_sherpa` in
-                    // config.toml — the loader parses any `#N`.
+                    // Curated subset of the 103 speakers — see the const's
+                    // doc comment for the full sid map and rationale.
                     for (sid, name) in CURATED_KOKORO_SPEAKERS {
                         out.push(Choice {
                             label: format!("Kokoro · {name}"),
@@ -627,7 +636,13 @@ impl TtsEngine for SherpaEngine {
                 resolved
             }
             None => {
-                self.init_error = Some("@i18n:errAudioOpen".into());
+                // Distinguish "the default output is broken" (suggests
+                // switching devices) from "this specific device won't open".
+                self.init_error = Some(if key.is_none() {
+                    "@i18n:errAudioDefaultHint".into()
+                } else {
+                    "@i18n:errAudioOpen".into()
+                });
                 None
             }
         }

@@ -54,7 +54,7 @@ pub fn download_pack(
     let k = kind_from_str(&kind).ok_or_else(|| format!("unknown pack: {kind}"))?;
     let dir: PathBuf = models_dir().ok_or_else(|| "no models dir".to_string())?;
 
-    {
+    let dl_state = {
         let mut active = state.download.lock().unwrap();
         if let Some(prev) = active.as_ref() {
             let snap = prev.snapshot();
@@ -63,33 +63,37 @@ pub fn download_pack(
             }
         }
         let downloader = ModelDownloader::start(k, dir);
+        let dl_state = downloader.state.clone();
         *active = Some(downloader);
-    }
-    let state_arc = state.download_arc();
+        dl_state
+    };
+    let slot = state.download_arc();
     let tts_tx = state.tts.tx.clone();
-    let cur_engine = state.config.lock().unwrap().engine;
-    let cur_device = state
-        .config
-        .lock()
-        .unwrap()
-        .tts_device_sherpa
-        .clone();
-    let cur_voice = state
-        .config
-        .lock()
-        .unwrap()
-        .tts_voice_sherpa
-        .clone();
+    let (cur_engine, cur_device, cur_voice) = {
+        let cfg = state.config.lock().unwrap();
+        (
+            cfg.engine,
+            cfg.tts_device_sherpa.clone(),
+            cfg.tts_voice_sherpa.clone(),
+        )
+    };
 
     // Poll the downloader on a watcher thread so the calling Tauri command
     // can return immediately. The downloader itself runs on its own thread
     // (spawned inside `ModelDownloader::start`) — we only watch its state.
-    thread::spawn(move || watch(state_arc, k, app, tts_tx, cur_engine, cur_device, cur_voice));
+    thread::spawn(move || {
+        watch(slot, dl_state, k, app, tts_tx, cur_engine, cur_device, cur_voice)
+    });
     Ok(())
 }
 
+#[allow(clippy::too_many_arguments)]
 fn watch(
-    state: Arc<Mutex<Option<ModelDownloader>>>,
+    slot: Arc<Mutex<Option<ModelDownloader>>>,
+    // The watched download's own state. Polling this instead of whatever
+    // currently sits in `slot` keeps a lingering watcher from observing —
+    // or, worse, clearing — a newer download that replaced its own.
+    dl_state: Arc<Mutex<DownloadState>>,
     kind: ModelKind,
     app: AppHandle,
     tts_tx: std::sync::mpsc::Sender<TtsCmd>,
@@ -100,10 +104,7 @@ fn watch(
     let mut last_status = String::new();
     let mut last_progress: f32 = -1.0;
     loop {
-        let snap: DownloadState = match state.lock().unwrap().as_ref() {
-            Some(d) => d.snapshot(),
-            None => return,
-        };
+        let snap: DownloadState = dl_state.lock().unwrap().clone();
         // Throttle: emit only when status text or 0.5%+ progress change.
         if snap.status != last_status || (snap.progress - last_progress).abs() >= 0.005 {
             let _ = app.emit(
@@ -137,8 +138,15 @@ fn watch(
                     });
                 }
             }
-            // Drop the downloader so the next download_pack can start.
-            *state.lock().unwrap() = None;
+            // Free the slot for the next download — but only if it still
+            // holds this download, not a newer one that already took over.
+            let mut active = slot.lock().unwrap();
+            if active
+                .as_ref()
+                .is_some_and(|d| Arc::ptr_eq(&d.state, &dl_state))
+            {
+                *active = None;
+            }
             return;
         }
         thread::sleep(Duration::from_millis(200));
@@ -146,12 +154,35 @@ fn watch(
 }
 
 #[tauri::command]
-pub fn delete_models() -> Result<(), String> {
-    let dir = models_dir().ok_or_else(|| "no models dir".to_string())?;
-    if !dir.exists() {
-        return Ok(());
+pub fn delete_models(state: State<'_, AppState>) -> Result<(), String> {
+    // Refuse while a download is writing into the directory — deleting
+    // under it would corrupt the extract and race the verifier.
+    {
+        let active = state.download.lock().unwrap();
+        if let Some(d) = active.as_ref() {
+            if !d.snapshot().done {
+                return Err("@i18n:dlAlreadyRunning".into());
+            }
+        }
     }
-    std::fs::remove_dir_all(&dir).map_err(|e| format!("@i18n:dlDeleteFail|{e}"))?;
+    let dir = models_dir().ok_or_else(|| "no models dir".to_string())?;
+    if dir.exists() {
+        std::fs::remove_dir_all(&dir).map_err(|e| format!("@i18n:dlDeleteFail|{e}"))?;
+    }
+    // The live engine may still hold the deleted pack in RAM and keep
+    // reporting "available" (preview would happily play from memory).
+    // Kick a reload so status honestly flips to "no model — download below".
+    let (engine, device, voice) = {
+        let cfg = state.config.lock().unwrap();
+        (
+            cfg.engine,
+            cfg.tts_device_sherpa.clone(),
+            cfg.tts_voice_sherpa.clone(),
+        )
+    };
+    if matches!(engine, Engine::Sherpa) {
+        let _ = state.tts.tx.send(TtsCmd::ReloadSherpa { device, voice });
+    }
     Ok(())
 }
 

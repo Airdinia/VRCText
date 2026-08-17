@@ -177,7 +177,16 @@ fn download_to(
     state: &Arc<Mutex<DownloadState>>,
     range: (f32, f32),
 ) -> Result<(), String> {
-    let resp = ureq::get(url)
+    // Explicit timeouts: without them a stalled connection blocks the read
+    // forever and the UI stays on "已有下载在进行中" until an app restart.
+    // No overall timeout — the Kokoro pack legitimately takes minutes; the
+    // read timeout only fires when the socket goes silent.
+    let agent = ureq::AgentBuilder::new()
+        .timeout_connect(std::time::Duration::from_secs(15))
+        .timeout_read(std::time::Duration::from_secs(30))
+        .build();
+    let resp = agent
+        .get(url)
         .call()
         .map_err(|e| format!("@i18n:dlHttp|{e}"))?;
     let total: Option<u64> = resp

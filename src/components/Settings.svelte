@@ -15,9 +15,20 @@
   let ipDraft = $state("");
   let portDraft = $state("");
 
+  // Sync drafts from config only when the backend value itself changed.
+  // `config-changed` fires for every config mutation (pin, bell, TTS
+  // toggles…) with a fresh object — resetting drafts unconditionally would
+  // wipe an in-progress edit whenever the user touches another control.
+  let lastCfgIp: string | null = null;
+  let lastCfgPort: number | null = null;
   $effect(() => {
-    if (cfg) {
+    if (!cfg) return;
+    if (cfg.ip !== lastCfgIp) {
+      lastCfgIp = cfg.ip;
       ipDraft = cfg.ip;
+    }
+    if (cfg.port !== lastCfgPort) {
+      lastCfgPort = cfg.port;
       portDraft = String(cfg.port);
     }
   });
