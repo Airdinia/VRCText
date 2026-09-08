@@ -57,7 +57,7 @@ Settings **and message history** are stored in plain text:
 %APPDATA%\vrctext\vrctext\data\models\
 ```
 
-Use **Clear all** in settings to clear history, and **Delete models** to reclaim model storage. Do not include configuration or private messages in bug reports.
+Use **Clear all** above the history list to clear history, and **Delete models** in settings to reclaim model storage. Do not include configuration or private messages in bug reports.
 
 ## Build from source
 

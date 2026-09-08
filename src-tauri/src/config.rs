@@ -89,15 +89,15 @@ impl Config {
         }
     }
 
-    pub fn set_current_device(&mut self, value: Option<String>) {
-        match self.engine {
+    pub fn set_device_for(&mut self, engine: Engine, value: Option<String>) {
+        match engine {
             Engine::Sapi => self.tts_device_sapi = value,
             Engine::Sherpa => self.tts_device_sherpa = value,
         }
     }
 
-    pub fn set_current_voice(&mut self, value: Option<String>) {
-        match self.engine {
+    pub fn set_voice_for(&mut self, engine: Engine, value: Option<String>) {
+        match engine {
             Engine::Sapi => self.tts_voice_sapi = value,
             Engine::Sherpa => self.tts_voice_sherpa = value,
         }
@@ -155,5 +155,28 @@ impl Config {
         while self.history.len() > HISTORY_CAP {
             self.history.pop_front();
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn delayed_selection_preserves_other_engine_preferences() {
+        let mut cfg = Config {
+            engine: Engine::Sapi,
+            tts_voice_sapi: Some("system voice".into()),
+            tts_device_sapi: Some("system output".into()),
+            ..Default::default()
+        };
+        // A Sherpa request completes after the UI has switched to SAPI.
+        cfg.set_voice_for(Engine::Sherpa, Some("kokoro#3".into()));
+        cfg.set_device_for(Engine::Sherpa, Some("virtual cable".into()));
+        assert_eq!(cfg.current_voice(), Some("system voice"));
+        assert_eq!(cfg.current_device(), Some("system output"));
+        cfg.engine = Engine::Sherpa;
+        assert_eq!(cfg.current_voice(), Some("kokoro#3"));
+        assert_eq!(cfg.current_device(), Some("virtual cable"));
     }
 }

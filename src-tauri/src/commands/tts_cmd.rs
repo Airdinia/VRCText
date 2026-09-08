@@ -133,13 +133,14 @@ pub async fn tts_apply_device(
             reply: tx,
         })
         .map_err(|_| "tts worker dead".to_string())?;
-    let resolved = tokio::task::spawn_blocking(move || rx.recv_timeout(REPLY_TIMEOUT))
-        .await
-        .map_err(|e| format!("tts join: {e}"))?
-        .map_err(|_| "tts no reply".to_string())?;
+    let (applied_engine, resolved) =
+        tokio::task::spawn_blocking(move || rx.recv_timeout(REPLY_TIMEOUT))
+            .await
+            .map_err(|e| format!("tts join: {e}"))?
+            .map_err(|_| "tts no reply".to_string())?;
     {
         let mut cfg = state.config.lock().unwrap();
-        cfg.set_current_device(resolved.clone().or(key));
+        cfg.set_device_for(applied_engine, resolved.clone().or(key));
         cfg.save();
     }
     Ok(resolved)
@@ -159,13 +160,14 @@ pub async fn tts_apply_voice(
             reply: tx,
         })
         .map_err(|_| "tts worker dead".to_string())?;
-    let resolved = tokio::task::spawn_blocking(move || rx.recv_timeout(REPLY_TIMEOUT))
-        .await
-        .map_err(|e| format!("tts join: {e}"))?
-        .map_err(|_| "tts no reply".to_string())?;
+    let (applied_engine, resolved) =
+        tokio::task::spawn_blocking(move || rx.recv_timeout(REPLY_TIMEOUT))
+            .await
+            .map_err(|e| format!("tts join: {e}"))?
+            .map_err(|_| "tts no reply".to_string())?;
     {
         let mut cfg = state.config.lock().unwrap();
-        cfg.set_current_voice(resolved.clone().or(key));
+        cfg.set_voice_for(applied_engine, resolved.clone().or(key));
         cfg.save();
     }
     Ok(resolved)

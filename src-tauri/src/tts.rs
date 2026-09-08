@@ -434,14 +434,7 @@ impl TtsEngine for SherpaEngine {
                     return false;
                 }
                 let resampled = resampler_cb.resample(samples, false);
-                let mut buf = buffer_cb.lock().unwrap();
-                buf.reserve(resampled.len() * channels);
-                for s in resampled {
-                    for _ in 0..channels {
-                        buf.push_back(s);
-                    }
-                }
-                true
+                enqueue_audio(&buffer_cb, &counter_cb, my_id, &resampled, channels)
             };
             let gen = GenerationConfig {
                 sid,
@@ -453,13 +446,7 @@ impl TtsEngine for SherpaEngine {
             if counter.load(Ordering::SeqCst) == my_id {
                 let tail = resampler.resample(&[], true);
                 if !tail.is_empty() {
-                    let mut buf = buffer.lock().unwrap();
-                    buf.reserve(tail.len() * channels);
-                    for s in tail {
-                        for _ in 0..channels {
-                            buf.push_back(s);
-                        }
-                    }
+                    enqueue_audio(&buffer, &counter, my_id, &tail, channels);
                 }
             }
         });
@@ -539,6 +526,8 @@ impl TtsEngine for SherpaEngine {
 
     fn apply_device(&mut self, key: Option<&str>) -> Option<String> {
         self.tts.as_ref()?;
+        // In-flight synthesis captured the previous device's PCM format.
+        self.stop();
         // Drop the old stream first — cpal will re-acquire the device.
         self.stream = None;
         self.buffer.lock().unwrap().clear();
@@ -594,18 +583,40 @@ impl TtsEngine for SherpaEngine {
 
         self.stream = None;
         self.tts = None;
-        let (tts, resolved_key) = load_pack_by_key(&models_dir, key)?;
+        self.current_voice_key = None;
+        let Some((tts, resolved_key)) = load_pack_by_key(&models_dir, key) else {
+            self.init_error = Some("@i18n:errLoadFailed".into());
+            return None;
+        };
         self.tts_sample_rate = tts.sample_rate() as u32;
         self.tts = Some(Arc::new(tts));
         self.current_voice_key = resolved_key.clone();
-        let dev = open_output_for(self.current_device.as_deref(), self.buffer.clone());
-        if let Some(d) = dev {
-            self.device_sample_rate = d.sample_rate;
-            self.device_channels = d.channels;
-            self.stream = Some(d.stream);
-        }
+        let device = self.current_device.clone();
+        self.apply_device(device.as_deref());
         resolved_key
     }
+}
+
+/// Check cancellation under the same lock used to clear queued playback.
+/// A callback may have started resampling before stop or a device switch.
+fn enqueue_audio(
+    buffer: &Mutex<VecDeque<f32>>,
+    counter: &AtomicU64,
+    generation: u64,
+    samples: &[f32],
+    channels: usize,
+) -> bool {
+    let mut buf = buffer.lock().unwrap();
+    if counter.load(Ordering::SeqCst) != generation {
+        return false;
+    }
+    buf.reserve(samples.len() * channels);
+    for sample in samples {
+        for _ in 0..channels {
+            buf.push_back(*sample);
+        }
+    }
+    true
 }
 
 #[derive(Clone, Debug)]
@@ -976,4 +987,33 @@ unsafe fn pwstr_to_string_and_free(p: PWSTR) -> String {
     let s = OsString::from_wide(slice).to_string_lossy().into_owned();
     CoTaskMemFree(Some(p.0 as _));
     s
+}
+
+#[cfg(test)]
+mod playback_tests {
+    use super::*;
+
+    #[test]
+    fn cancelled_callback_cannot_refill_cleared_playback() {
+        let buffer = Arc::new(Mutex::new(VecDeque::from([0.25])));
+        let counter = Arc::new(AtomicU64::new(1));
+        let mut locked = buffer.lock().unwrap();
+        let (ready_tx, ready_rx) = std::sync::mpsc::channel();
+        let callback_buffer = buffer.clone();
+        let callback_counter = counter.clone();
+        let callback = thread::spawn(move || {
+            // Model a callback that passed its fast check before cancellation.
+            let generation = callback_counter.load(Ordering::SeqCst);
+            ready_tx.send(()).unwrap();
+            enqueue_audio(&callback_buffer, &callback_counter, generation, &[0.5], 2)
+        });
+        ready_rx.recv().unwrap();
+        counter.fetch_add(1, Ordering::SeqCst);
+        locked.clear();
+        drop(locked);
+        assert!(!callback.join().unwrap());
+        assert!(buffer.lock().unwrap().is_empty());
+        assert!(enqueue_audio(&buffer, &counter, 2, &[0.75], 2));
+        assert_eq!(*buffer.lock().unwrap(), VecDeque::from([0.75, 0.75]));
+    }
 }

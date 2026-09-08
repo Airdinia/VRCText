@@ -58,11 +58,11 @@ pub enum TtsCmd {
     ListVoices(Sender<Vec<Choice>>),
     ApplyDevice {
         key: Option<String>,
-        reply: Sender<Option<String>>,
+        reply: Sender<(Engine, Option<String>)>,
     },
     ApplyVoice {
         key: Option<String>,
-        reply: Sender<Option<String>>,
+        reply: Sender<(Engine, Option<String>)>,
     },
     /// Re-attempt sherpa load. Used after a model download completes.
     ReloadSherpa {
@@ -265,8 +265,10 @@ fn run(
                     {
                         let mut s = status.lock().unwrap();
                         s.current_device = resolved.clone();
+                        s.available = engine.available();
+                        s.error = engine.unavailable_detail();
                     }
-                    let _ = reply.send(resolved);
+                    let _ = reply.send((current_engine, resolved));
                     publish_only_event(&app, &status);
                 }
                 TtsCmd::ApplyVoice { key, reply } => {
@@ -282,8 +284,10 @@ fn run(
                     {
                         let mut s = status.lock().unwrap();
                         s.current_voice = resolved.clone();
+                        s.available = engine.available();
+                        s.error = engine.unavailable_detail();
                     }
-                    let _ = reply.send(resolved);
+                    let _ = reply.send((current_engine, resolved));
                     publish_only_event(&app, &status);
                 }
                 TtsCmd::ReloadSherpa { device, voice } => {

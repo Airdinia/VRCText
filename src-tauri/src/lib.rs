@@ -76,10 +76,8 @@ pub fn run() {
             // Listen for VRChat's outbound OSC broadcasts on port 9001 so
             // the UI can show a green dot only when OSC is genuinely live,
             // not just because send_to() returned Ok (UDP can't tell).
-            // Park the listener only when the window is minimised
-            // — the user can't see the indicator anyway, no point spinning.
-            // Losing focus (alt-tab) keeps the probe running so the status
-            // stays up-to-date when the window regains focus.
+            // Suppress UI events while minimised, but keep consuming
+            // traffic so old packets cannot accumulate during that time.
             if let (Some(probe), Some(window)) = (
                 vrc_probe::spawn_listener(app.handle().clone()),
                 app.get_webview_window("main"),
@@ -90,8 +88,7 @@ pub fn run() {
                 window.on_window_event(move |ev| {
                     use tauri::WindowEvent::Resized;
                     // Resized fires on minimise (size goes to 0×0 on
-                    // Windows) and on restore. We only pause the probe
-                    // when minimised — losing focus is fine.
+                    // Windows) and on restore. Losing focus is fine.
                     if !matches!(ev, Resized(_)) {
                         return;
                     }

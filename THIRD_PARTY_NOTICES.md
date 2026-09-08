@@ -20,7 +20,7 @@ The current Sherpa build statically links eSpeak NG and other native libraries. 
 
 [eSpeak NG uses GPL-3.0](https://github.com/espeak-ng/espeak-ng/blob/master/COPYING). Distributing the combined executable requires satisfying GPL terms, including providing Corresponding Source, matching build scripts and dependency notices. VRCText's original files retain their MIT grant.
 
-Copies of [GPL-3.0](public/licenses/GPL-3.0.txt) and [Apache-2.0](public/licenses/Apache-2.0.txt) are included. Before a binary release, verify the native artifacts and assemble their exact sources and notices; the included license texts alone do not complete this requirement.
+Copies of [GPL-3.0](public/licenses/GPL-3.0.txt) and [Apache-2.0](public/licenses/Apache-2.0.txt) are included. Binary release archives must also provide the matching dependency sources, build scripts and notices. Keep the `source` and `licenses` directories with the executable when redistributing the complete release package; license texts alone do not replace the source requirement.
 
 ## Fonts
 
