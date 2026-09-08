@@ -25,5 +25,14 @@
     "tslib": "^2.8.1",
     "typescript": "^5.7.2",
     "vite": "^6.0.7"
+  },
+  "description": "Windows VRChat OSC chatbox with local text-to-speech",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/Airdinia/VRCText.git"
+  },
+  "engines": {
+    "node": ">=22"
   }
 }

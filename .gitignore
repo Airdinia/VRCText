@@ -23,3 +23,15 @@ Thumbs.db
 .env
 .env.*
 *.log
+
+# Local audit reports and history backups (never publish)
+/.local-review/
+*.bundle
+/.codex/
+/.agents/
+/target/
+/release/
+*.pem
+*.key
+*.pfx
+*.p12

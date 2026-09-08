@@ -151,7 +151,7 @@
       return;
     }
 
-    if (e.key === "ArrowUp" && text.length === 0) {
+    if (e.key === "ArrowUp" && (text.length === 0 || historyCursor !== null)) {
       const hist = store.history;
       if (hist.length === 0) return;
       e.preventDefault();

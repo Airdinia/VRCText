@@ -6,6 +6,19 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## [Unreleased]
 
+### Security and open-source preparation
+- Remove new Matcha/Vocos downloads because the model archive does not establish clear redistribution terms and identifies non-commercial training data; retain existing local model compatibility.
+- Verify model SHA-256 digests before extraction; stage installation and reject incomplete, oversized or unsafe archives.
+- Enforce message limits and reject NUL characters in the backend, including history resend and speech preview.
+- Treat SAPI input as plain text rather than XML.
+- Enable a content security policy and update dependencies identified by npm audit and RustSec.
+- Add Windows CI, contribution and security guidance, font licenses, and native-library distribution requirements.
+- Correct model languages, download sizes, data/privacy descriptions and repository links in both READMEs.
+- Remove unused synchronous TTS initialization and generated non-Windows icon assets.
+- Fix repeated Up-arrow history navigation and use current settings when a model download completes.
+
+The older entries below describe their respective releases, including the former egui UI. They do not imply that the current WebView frontend uses IMM32.
+
 ### Added
 - OSC target now accepts hostnames (`localhost`, LAN machine names) — previously only IP literals worked even though the settings UI let you type a hostname, so every send failed with "invalid target".
 - Expand the curated Kokoro voice picker from 1 to 13 speakers (3 English, 5 Chinese female, 5 Chinese male). Any of the 103 sids can still be set by hand-editing `tts_voice_sherpa`.
@@ -61,16 +74,16 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 ## [0.2.0] - 2026-05-10
 
 ### Added
-- **Kokoro multi-lang v1.1 TTS pack** alongside Matcha — ~350 MB, full precision, 103 voices across English / Chinese / Japanese / Korean / French.
+- **Kokoro multi-lang v1.1 TTS pack** alongside Matcha — about 365 MB, full precision, 103 Chinese / English speakers.
 - Background loading for the Sherpa engine so the window opens instantly and the model warms up off the UI thread.
 
 ### Fixed
 - Composer click-to-caret now resolves to the right insertion point in multi-line drafts.
 - Dim the empty-composer hint text for better legibility against the terminal-style background.
 
-[Unreleased]: https://github.com/congyoua/VRCText/compare/v0.2.4...HEAD
-[0.2.4]: https://github.com/congyoua/VRCText/compare/v0.2.3...v0.2.4
-[0.2.3]: https://github.com/congyoua/VRCText/compare/v0.2.2...v0.2.3
-[0.2.2]: https://github.com/congyoua/VRCText/compare/v0.2.1...v0.2.2
-[0.2.1]: https://github.com/congyoua/VRCText/compare/v0.2...v0.2.1
-[0.2.0]: https://github.com/congyoua/VRCText/releases/tag/v0.2
+[Unreleased]: https://github.com/Airdinia/VRCText/compare/v0.2.4...HEAD
+[0.2.4]: https://github.com/Airdinia/VRCText/compare/v0.2.3...v0.2.4
+[0.2.3]: https://github.com/Airdinia/VRCText/compare/v0.2.2...v0.2.3
+[0.2.2]: https://github.com/Airdinia/VRCText/compare/v0.2.1...v0.2.2
+[0.2.1]: https://github.com/Airdinia/VRCText/compare/v0.2...v0.2.1
+[0.2.0]: https://github.com/Airdinia/VRCText/releases/tag/v0.2

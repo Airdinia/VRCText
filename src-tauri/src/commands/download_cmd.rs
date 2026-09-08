@@ -10,7 +10,7 @@ use std::thread;
 use std::time::Duration;
 
 use serde::Serialize;
-use tauri::{AppHandle, Emitter, State};
+use tauri::{AppHandle, Emitter, Manager, State};
 
 use crate::config::{models_dir, Engine};
 use crate::download::{installed_kinds, DownloadState, ModelDownloader, ModelKind};
@@ -32,7 +32,6 @@ pub struct DownloadErrorEvent {
 
 fn kind_from_str(s: &str) -> Option<ModelKind> {
     match s {
-        "matcha" => Some(ModelKind::MatchaZhBaker),
         "kokoro" => Some(ModelKind::KokoroMultiLang),
         _ => None,
     }
@@ -56,11 +55,8 @@ pub fn download_pack(
 
     let dl_state = {
         let mut active = state.download.lock().unwrap();
-        if let Some(prev) = active.as_ref() {
-            let snap = prev.snapshot();
-            if !snap.done {
-                return Err("@i18n:dlAlreadyRunning".into());
-            }
+        if active.is_some() {
+            return Err("@i18n:dlAlreadyRunning".into());
         }
         let downloader = ModelDownloader::start(k, dir);
         let dl_state = downloader.state.clone();
@@ -69,25 +65,14 @@ pub fn download_pack(
     };
     let slot = state.download_arc();
     let tts_tx = state.tts.tx.clone();
-    let (cur_engine, cur_device, cur_voice) = {
-        let cfg = state.config.lock().unwrap();
-        (
-            cfg.engine,
-            cfg.tts_device_sherpa.clone(),
-            cfg.tts_voice_sherpa.clone(),
-        )
-    };
 
     // Poll the downloader on a watcher thread so the calling Tauri command
     // can return immediately. The downloader itself runs on its own thread
     // (spawned inside `ModelDownloader::start`) — we only watch its state.
-    thread::spawn(move || {
-        watch(slot, dl_state, k, app, tts_tx, cur_engine, cur_device, cur_voice)
-    });
+    thread::spawn(move || watch(slot, dl_state, k, app, tts_tx));
     Ok(())
 }
 
-#[allow(clippy::too_many_arguments)]
 fn watch(
     slot: Arc<Mutex<Option<ModelDownloader>>>,
     // The watched download's own state. Polling this instead of whatever
@@ -97,9 +82,6 @@ fn watch(
     kind: ModelKind,
     app: AppHandle,
     tts_tx: std::sync::mpsc::Sender<TtsCmd>,
-    cur_engine: Engine,
-    cur_device: Option<String>,
-    cur_voice: Option<String>,
 ) {
     let mut last_status = String::new();
     let mut last_progress: f32 = -1.0;
@@ -119,6 +101,9 @@ fn watch(
             last_progress = snap.progress;
         }
         if snap.done {
+            // Keep deletion/new downloads serialized until completion has
+            // queued its reload, using settings current at completion time.
+            let mut active = slot.lock().unwrap();
             if let Some(msg) = snap.error {
                 let _ = app.emit(
                     "download-error",
@@ -131,16 +116,17 @@ fn watch(
                 let _ = app.emit("download-complete", kind_str(kind));
                 // If the user is on Sherpa engine, retry loading the model
                 // now that the bytes are on disk.
-                if matches!(cur_engine, Engine::Sherpa) {
+                let state = app.state::<AppState>();
+                let cfg = state.config.lock().unwrap();
+                if matches!(cfg.engine, Engine::Sherpa) {
                     let _ = tts_tx.send(TtsCmd::ReloadSherpa {
-                        device: cur_device,
-                        voice: cur_voice,
+                        device: cfg.tts_device_sherpa.clone(),
+                        voice: cfg.tts_voice_sherpa.clone(),
                     });
                 }
             }
             // Free the slot for the next download — but only if it still
             // holds this download, not a newer one that already took over.
-            let mut active = slot.lock().unwrap();
             if active
                 .as_ref()
                 .is_some_and(|d| Arc::ptr_eq(&d.state, &dl_state))
@@ -161,10 +147,8 @@ pub fn delete_models(state: State<'_, AppState>) -> Result<(), String> {
     // Kokoro pack) so a concurrent download_pack serialises behind the
     // delete instead of starting to write mid-teardown.
     let guard = state.download.lock().unwrap();
-    if let Some(d) = guard.as_ref() {
-        if !d.snapshot().done {
-            return Err("@i18n:dlAlreadyRunning".into());
-        }
+    if guard.is_some() {
+        return Err("@i18n:dlAlreadyRunning".into());
     }
     let dir = models_dir().ok_or_else(|| "no models dir".to_string())?;
     if dir.exists() {

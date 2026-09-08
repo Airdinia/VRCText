@@ -45,7 +45,7 @@ const dict = {
     outputDevice: "输出设备",
     aiLoading: "AI 引擎加载中…",
     routingHint:
-      "路由到 VRChat 麦克风需配合虚拟音频线缆(如 CABLE Input)作为输出设备",
+      "使用虚拟音频线缆将语音输出路由至 VRChat 的麦克风输入",
     preview: "试听",
     playing: "播放中…",
     refreshDevices: "刷新设备",
@@ -73,7 +73,7 @@ const dict = {
 
     // Model download
     matchaName: "Matcha 中文",
-    kokoroName: "Kokoro 多语言",
+    kokoroName: "Kokoro 中英双语",
     installed: "已安装",
     download: "下载",
     retry: "重试",
@@ -96,10 +96,7 @@ const dict = {
     // Download status (static)
     dlPrepare: "准备下载 {arg}…",
     dlComplete: "完成",
-    dlVocoder: "下载基础音频组件 (~24 MB)",
-    dlMatcha: "下载 Matcha 模型 (~60 MB)",
-    dlKokoro: "下载 Kokoro 模型 (~350 MB，全精度)",
-    dlExtract: "解压…",
+    dlKokoro: "下载 Kokoro 模型 (~365 MB，全精度)",
     dlExtractLarge: "解压（文件较多，请耐心等待）…",
     // Download errors
     dlCreateDirFail: "创建目录失败",
@@ -117,6 +114,9 @@ const dict = {
     errOscTarget: "目标地址无效",
     errOscSend: "OSC 发送失败",
     errEmptyMessage: "空消息",
+    dlSizeInvalid: "下载内容为空、大小不符或超出限制，请重试",
+    dlChecksumMismatch: "模型校验失败，请重试；若仍失败，请报告问题",
+    errInvalidMessage: "消息不得超过 144 个字符或包含空字符",
   },
   en: {
     // Header tooltips
@@ -156,7 +156,7 @@ const dict = {
     outputDevice: "Output Device",
     aiLoading: "AI Engine Loading…",
     routingHint:
-      "To route to VRChat's microphone, pair with a virtual audio cable (e.g. CABLE Input) as the output device",
+      "Use a virtual audio cable to route speech output to VRChat's microphone input",
     preview: "Preview",
     playing: "Playing…",
     refreshDevices: "Refresh",
@@ -185,7 +185,7 @@ const dict = {
 
     // Model download
     matchaName: "Matcha Chinese",
-    kokoroName: "Kokoro Multilingual",
+    kokoroName: "Kokoro Chinese / English",
     installed: "Installed",
     download: "Download",
     retry: "Retry",
@@ -207,10 +207,7 @@ const dict = {
     errAudioOpen: "Cannot open this audio device",
     dlPrepare: "Preparing to download {arg}…",
     dlComplete: "Done",
-    dlVocoder: "Downloading base audio components (~24 MB)",
-    dlMatcha: "Downloading Matcha model (~60 MB)",
-    dlKokoro: "Downloading Kokoro model (~350 MB, full precision)",
-    dlExtract: "Extracting…",
+    dlKokoro: "Downloading Kokoro model (~365 MB, full precision)",
     dlExtractLarge: "Extracting (this may take a while)…",
     dlCreateDirFail: "Failed to create directory",
     dlVerifyMissing:
@@ -227,6 +224,9 @@ const dict = {
     errOscTarget: "Invalid target address",
     errOscSend: "OSC send failed",
     errEmptyMessage: "Empty message",
+    dlSizeInvalid: "Download is empty, incomplete, or too large; please retry",
+    dlChecksumMismatch: "Model checksum mismatch; retry or report the problem if it persists",
+    errInvalidMessage: "Messages must be at most 144 characters and contain no NUL characters",
   },
 } as const;
 

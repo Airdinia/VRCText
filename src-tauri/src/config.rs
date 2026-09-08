@@ -122,13 +122,19 @@ pub fn now_ts() -> i64 {
 
 impl Config {
     pub fn load() -> Self {
-        let Some(path) = config_path() else { return Self::default(); };
-        let Ok(raw) = fs::read_to_string(&path) else { return Self::default(); };
+        let Some(path) = config_path() else {
+            return Self::default();
+        };
+        let Ok(raw) = fs::read_to_string(&path) else {
+            return Self::default();
+        };
         toml::from_str(&raw).unwrap_or_default()
     }
 
     pub fn save(&self) {
-        let Some(path) = config_path() else { return; };
+        let Some(path) = config_path() else {
+            return;
+        };
         if let Some(parent) = path.parent() {
             let _ = fs::create_dir_all(parent);
         }

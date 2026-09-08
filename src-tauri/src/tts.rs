@@ -1,9 +1,3 @@
-// Some legacy paths (`SherpaEngine::new`, `init`, `size_hint`, ...) survive
-// here as a public API for tests and future callers; the active worker
-// uses `from_loaded` exclusively. Silence the dead-code warnings rather
-// than amputating call sites we may want again.
-#![allow(dead_code)]
-
 use std::collections::VecDeque;
 use std::ffi::OsString;
 use std::os::windows::ffi::OsStringExt;
@@ -22,7 +16,7 @@ use windows::core::{Interface, PCWSTR, PWSTR};
 use windows::Win32::Media::Audio::{waveOutGetDevCapsW, waveOutGetNumDevs, WAVEOUTCAPSW};
 use windows::Win32::Media::Speech::{
     ISpMMSysAudio, ISpObjectToken, ISpObjectTokenCategory, ISpVoice, SpMMAudioOut,
-    SpObjectTokenCategory, SpVoice, SPF_ASYNC, SPF_PURGEBEFORESPEAK,
+    SpObjectTokenCategory, SpVoice, SPF_ASYNC, SPF_IS_NOT_XML, SPF_PURGEBEFORESPEAK,
 };
 use windows::Win32::System::Com::{
     CoCreateInstance, CoInitializeEx, CoTaskMemFree, CLSCTX_ALL, COINIT_APARTMENTTHREADED,
@@ -125,23 +119,23 @@ impl TtsEngine for SapiEngine {
         if text.trim().is_empty() {
             return;
         }
-        let Some(voice) = &self.voice else { return; };
+        let Some(voice) = &self.voice else {
+            return;
+        };
         let wide: Vec<u16> = text.encode_utf16().chain(std::iter::once(0)).collect();
-        let flags = SPF_ASYNC.0 as u32 | SPF_PURGEBEFORESPEAK.0 as u32;
+        let flags = SPF_ASYNC.0 as u32 | SPF_PURGEBEFORESPEAK.0 as u32 | SPF_IS_NOT_XML.0 as u32;
         unsafe {
             let _ = voice.Speak(PCWSTR(wide.as_ptr()), flags, None);
         }
     }
 
     fn stop(&mut self) {
-        let Some(voice) = &self.voice else { return; };
+        let Some(voice) = &self.voice else {
+            return;
+        };
         let empty = [0u16];
         unsafe {
-            let _ = voice.Speak(
-                PCWSTR(empty.as_ptr()),
-                SPF_PURGEBEFORESPEAK.0 as u32,
-                None,
-            );
+            let _ = voice.Speak(PCWSTR(empty.as_ptr()), SPF_PURGEBEFORESPEAK.0 as u32, None);
         }
     }
 
@@ -184,7 +178,9 @@ impl TtsEngine for SapiEngine {
     }
 
     fn apply_device(&mut self, key: Option<&str>) -> Option<String> {
-        let Some(voice) = &self.voice else { return None; };
+        let Some(voice) = &self.voice else {
+            return None;
+        };
         if let Some(want) = key {
             if let Some((id, name)) = enumerate_wave_out()
                 .into_iter()
@@ -200,7 +196,9 @@ impl TtsEngine for SapiEngine {
     }
 
     fn apply_voice(&mut self, key: Option<&str>) -> Option<String> {
-        let Some(voice) = &self.voice else { return None; };
+        let Some(voice) = &self.voice else {
+            return None;
+        };
         unsafe {
             if let Some(want) = key {
                 for (token_name, token) in enum_voice_tokens() {
@@ -227,7 +225,9 @@ pub struct LoadingEngine {
 
 impl LoadingEngine {
     pub fn loading() -> Self {
-        Self { detail: "@i18n:engineLoading".into() }
+        Self {
+            detail: "@i18n:engineLoading".into(),
+        }
     }
     pub fn failed(msg: String) -> Self {
         Self { detail: msg }
@@ -297,8 +297,8 @@ fn load_sherpa_sync(preferred_key: Option<&str>) -> Result<LoadedSherpa, String>
     {
         return Err("@i18n:errNoModel".to_string());
     }
-    let (tts, resolved) = load_pack_by_key(&dir, preferred_key)
-        .ok_or_else(|| "@i18n:errLoadFailed".to_string())?;
+    let (tts, resolved) =
+        load_pack_by_key(&dir, preferred_key).ok_or_else(|| "@i18n:errLoadFailed".to_string())?;
     let rate = tts.sample_rate() as u32;
     Ok(LoadedSherpa {
         tts: Arc::new(tts),
@@ -351,51 +351,7 @@ struct DeviceStream {
     channels: u16,
 }
 
-/// Result of `SherpaEngine::init`. Returned as a struct rather than a tuple
-/// because three of the four optional fields share a type (`Option<String>`)
-/// and positional access was bug-bait when the set grew.
-struct InitOutcome {
-    tts: Option<Arc<OfflineTts>>,
-    tts_sample_rate: u32,
-    voice_key: Option<String>,
-    device: Option<DeviceStream>,
-    error: Option<String>,
-}
-
-impl InitOutcome {
-    fn empty() -> Self {
-        Self {
-            tts: None,
-            tts_sample_rate: 22050,
-            voice_key: None,
-            device: None,
-            error: None,
-        }
-    }
-}
-
 impl SherpaEngine {
-    pub fn new() -> Self {
-        let buffer: Arc<Mutex<VecDeque<f32>>> = Arc::new(Mutex::new(VecDeque::new()));
-        let out = Self::init(buffer.clone(), None);
-        let (stream, device_sample_rate, device_channels) = match out.device {
-            Some(d) => (Some(d.stream), d.sample_rate, d.channels),
-            None => (None, 48000, 2),
-        };
-        Self {
-            tts: out.tts,
-            tts_sample_rate: out.tts_sample_rate,
-            current_voice_key: out.voice_key,
-            device_sample_rate,
-            device_channels,
-            buffer,
-            stream,
-            current_device: None,
-            gen_counter: Arc::new(AtomicU64::new(0)),
-            init_error: out.error,
-        }
-    }
-
     /// Attach a pre-loaded model (built on a worker thread via
     /// `load_sherpa_async`). No audio stream is opened yet — the caller is
     /// expected to follow up with `apply_device()`, which opens exactly one
@@ -417,47 +373,6 @@ impl SherpaEngine {
             current_device: None,
             gen_counter: Arc::new(AtomicU64::new(0)),
             init_error: None,
-        }
-    }
-
-    /// Classify each step of the load so the UI can explain what went wrong.
-    /// `error` is set when any step failed; the other fields hold whichever
-    /// partial progress we managed (so `available()` can still differentiate
-    /// "no models yet" from "load failed").
-    fn init(
-        buffer: Arc<Mutex<VecDeque<f32>>>,
-        device: Option<&str>,
-    ) -> InitOutcome {
-        let Some(models_dir) = crate::config::models_dir() else {
-            return InitOutcome {
-                error: Some("@i18n:errAppDataModels".into()),
-                ..InitOutcome::empty()
-            };
-        };
-        if !models_dir.exists()
-            || std::fs::read_dir(&models_dir)
-                .map(|mut i| i.next().is_none())
-                .unwrap_or(true)
-        {
-            return InitOutcome::empty(); // no models yet — UI shows download
-        }
-        let Some((tts, voice_key)) = load_pack_by_key(&models_dir, None) else {
-            return InitOutcome {
-                error: Some("@i18n:errLoadFailed".into()),
-                ..InitOutcome::empty()
-            };
-        };
-        let tts_sample_rate = tts.sample_rate() as u32;
-        let device = open_output_for(device, buffer);
-        let error = device
-            .is_none()
-            .then(|| "@i18n:errAudioDefaultHint".into());
-        InitOutcome {
-            tts: Some(Arc::new(tts)),
-            tts_sample_rate,
-            voice_key,
-            device,
-            error,
         }
     }
 
@@ -528,7 +443,10 @@ impl TtsEngine for SherpaEngine {
                 }
                 true
             };
-            let gen = GenerationConfig { sid, ..Default::default() };
+            let gen = GenerationConfig {
+                sid,
+                ..Default::default()
+            };
             let _ = tts.generate_with_config(&text, &gen, Some(callback));
             // Flush the resampler's filter delay line so trailing samples
             // (~6 input samples ≈ 0.25 ms at 24 kHz) don't get chopped.
@@ -661,11 +579,16 @@ impl TtsEngine for SherpaEngine {
         // `GenerationConfig.sid` on the next `speak()`. Saves several
         // seconds when scrolling through the combo.
         if let (Some(want), Some(cur)) = (key, self.current_voice_key.as_deref()) {
-            let (new_pack, _) = parse_voice_key(want);
+            let (new_pack, sid) = parse_voice_key(want);
             let (cur_pack, _) = parse_voice_key(cur);
             if new_pack == cur_pack && self.tts.is_some() {
-                self.current_voice_key = Some(want.to_string());
-                return Some(want.to_string());
+                let resolved = if new_pack == ModelKind::KokoroMultiLang.pack_dir() {
+                    format!("{new_pack}#{}", sid.unwrap_or(0))
+                } else {
+                    new_pack.to_string()
+                };
+                self.current_voice_key = Some(resolved.clone());
+                return Some(resolved);
             }
         }
 
@@ -706,7 +629,10 @@ fn provider() -> Option<String> {
 /// `sid` is `None` for the bare form (Matcha single-speaker).
 fn parse_voice_key(key: &str) -> (&str, Option<i32>) {
     match key.rsplit_once('#') {
-        Some((pack, sid)) => (pack, sid.parse().ok()),
+        Some((pack, sid)) => (
+            pack,
+            sid.parse::<i32>().ok().filter(|n| (0..=102).contains(n)),
+        ),
         None => (key, None),
     }
 }
@@ -764,7 +690,9 @@ fn try_load_matcha(models_dir: &Path, pack_name: &str) -> Option<OfflineTts> {
     let matcha = OfflineTtsMatchaModelConfig {
         acoustic_model: Some(acoustic.to_string_lossy().into_owned()),
         vocoder: Some(vocoder.to_string_lossy().into_owned()),
-        lexicon: lexicon.exists().then(|| lexicon.to_string_lossy().into_owned()),
+        lexicon: lexicon
+            .exists()
+            .then(|| lexicon.to_string_lossy().into_owned()),
         tokens: Some(tokens.to_string_lossy().into_owned()),
         dict_dir: dict.is_dir().then(|| dict.to_string_lossy().into_owned()),
         ..Default::default()
@@ -794,8 +722,10 @@ fn try_load_kokoro(models_dir: &Path, pack_name: &str) -> Option<OfflineTts> {
     // The multi-lang pack ships US/GB English + Chinese lexicons; sherpa
     // takes them comma-separated and falls back to espeak's phonemizer
     // for any language whose lexicon is absent.
-    let lexicon =
-        gather_existing(&d, &["lexicon-us-en.txt", "lexicon-gb-en.txt", "lexicon-zh.txt"]);
+    let lexicon = gather_existing(
+        &d,
+        &["lexicon-us-en.txt", "lexicon-gb-en.txt", "lexicon-zh.txt"],
+    );
     // Multi-lang Kokoro takes Chinese FSTs too; en-only packs don't ship them.
     let rule_fsts = gather_existing(&d, &["phone-zh.fst", "date-zh.fst", "number-zh.fst"]);
 
@@ -806,7 +736,11 @@ fn try_load_kokoro(models_dir: &Path, pack_name: &str) -> Option<OfflineTts> {
     // RTF, inaudible quality delta for chatbox TTS.
     let model_file = {
         let int8 = d.join("model.int8.onnx");
-        if int8.exists() { int8 } else { d.join("model.onnx") }
+        if int8.exists() {
+            int8
+        } else {
+            d.join("model.onnx")
+        }
     };
     let kokoro = OfflineTtsKokoroModelConfig {
         model: Some(model_file.to_string_lossy().into_owned()),
@@ -953,7 +887,10 @@ fn set_voice_output(voice: &ISpVoice, device_id: u32) -> bool {
 ///       → "Microsoft Huihui"
 fn shorten_voice_label(name: &str) -> String {
     let base = name.split(" - ").next().unwrap_or(name);
-    base.replace(" Desktop", "").replace(" Server", "").trim().to_string()
+    base.replace(" Desktop", "")
+        .replace(" Server", "")
+        .trim()
+        .to_string()
 }
 
 fn enumerate_wave_out() -> Vec<(u32, String)> {
@@ -1012,7 +949,9 @@ fn enum_voice_tokens() -> Vec<(String, ISpObjectToken)> {
             {
                 break;
             }
-            let Some(token) = slot.take() else { continue; };
+            let Some(token) = slot.take() else {
+                continue;
+            };
             let desc = match token.GetStringValue(PCWSTR::null()) {
                 Ok(p) => pwstr_to_string_and_free(p),
                 Err(_) => continue,

@@ -76,7 +76,12 @@ pub struct TtsHandle {
     pub status: Arc<Mutex<TtsStatus>>,
 }
 
-pub fn spawn(app: AppHandle, initial_engine: Engine, device: Option<String>, voice: Option<String>) -> TtsHandle {
+pub fn spawn(
+    app: AppHandle,
+    initial_engine: Engine,
+    device: Option<String>,
+    voice: Option<String>,
+) -> TtsHandle {
     let status = Arc::new(Mutex::new(TtsStatus {
         engine: "sapi",
         ..Default::default()
@@ -170,16 +175,7 @@ fn run(
                     // in flight.
                     sherpa_load = None;
                     engine = Box::new(LoadingEngine::failed(msg.clone()));
-                    publish_status(
-                        &app,
-                        &status,
-                        "sherpa",
-                        false,
-                        false,
-                        Some(msg),
-                        None,
-                        None,
-                    );
+                    publish_status(&app, &status, "sherpa", false, false, Some(msg), None, None);
                 }
                 Err(mpsc::TryRecvError::Empty) => {}
                 Err(mpsc::TryRecvError::Disconnected) => {
@@ -192,7 +188,11 @@ fn run(
             Ok(cmd) => match cmd {
                 TtsCmd::Speak(text) => engine.speak(&text),
                 TtsCmd::Stop => engine.stop(),
-                TtsCmd::SetEnabled { enabled: true, device, voice } => {
+                TtsCmd::SetEnabled {
+                    enabled: true,
+                    device,
+                    voice,
+                } => {
                     // Re-acquire OS audio handles in case audiosrv was
                     // restarted while idle, then re-bind the saved routing
                     // (reload() returns a virgin engine with no device).
@@ -244,9 +244,7 @@ fn run(
                             engine = Box::new(LoadingEngine::loading());
                             sherpa_load = Some(load_sherpa_async(voice));
                             pending_device = device;
-                            publish_status(
-                                &app, &status, "loading", false, true, None, None, None,
-                            );
+                            publish_status(&app, &status, "loading", false, true, None, None, None);
                         }
                     }
                 }
@@ -293,9 +291,7 @@ fn run(
                         engine = Box::new(LoadingEngine::loading());
                         sherpa_load = Some(load_sherpa_async(voice));
                         pending_device = device;
-                        publish_status(
-                            &app, &status, "loading", false, true, None, None, None,
-                        );
+                        publish_status(&app, &status, "loading", false, true, None, None, None);
                     }
                 }
             },
@@ -349,4 +345,3 @@ fn publish_only_event(app: &AppHandle, status: &Arc<Mutex<TtsStatus>>) {
     let snap = status.lock().unwrap().clone();
     let _ = app.emit("tts-status", snap);
 }
-

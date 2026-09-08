@@ -22,6 +22,7 @@ pub fn tts_status(state: State<'_, AppState>) -> TtsStatus {
 
 #[tauri::command]
 pub fn tts_speak(text: String, state: State<'_, AppState>) -> Result<(), String> {
+    let text = crate::osc::validate_message(&text)?.to_string();
     state
         .tts
         .tx
@@ -56,7 +57,11 @@ pub fn tts_set_enabled(
     state
         .tts
         .tx
-        .send(TtsCmd::SetEnabled { enabled, device, voice })
+        .send(TtsCmd::SetEnabled {
+            enabled,
+            device,
+            voice,
+        })
         .map_err(|_| "tts worker dead".to_string())
 }
 
@@ -87,9 +92,7 @@ pub fn tts_switch_engine(
 }
 
 #[tauri::command]
-pub async fn tts_list_devices(
-    state: State<'_, AppState>,
-) -> Result<Vec<Choice>, String> {
+pub async fn tts_list_devices(state: State<'_, AppState>) -> Result<Vec<Choice>, String> {
     let (tx, rx) = mpsc::channel();
     state
         .tts
@@ -103,9 +106,7 @@ pub async fn tts_list_devices(
 }
 
 #[tauri::command]
-pub async fn tts_list_voices(
-    state: State<'_, AppState>,
-) -> Result<Vec<Choice>, String> {
+pub async fn tts_list_voices(state: State<'_, AppState>) -> Result<Vec<Choice>, String> {
     let (tx, rx) = mpsc::channel();
     state
         .tts

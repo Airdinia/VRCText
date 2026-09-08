@@ -141,9 +141,7 @@ pub fn run() {
 #[cfg(windows)]
 fn show_startup_error(msg: &str) {
     use windows::core::{w, PCWSTR};
-    use windows::Win32::UI::WindowsAndMessaging::{
-        MessageBoxW, MB_ICONERROR, MB_OK,
-    };
+    use windows::Win32::UI::WindowsAndMessaging::{MessageBoxW, MB_ICONERROR, MB_OK};
 
     // Fires before the frontend loads, so we can't read the user's language
     // preference — show both languages stacked instead.

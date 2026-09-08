@@ -9,15 +9,13 @@ use crate::osc;
 use crate::state::AppState;
 use crate::tts_worker::TtsCmd;
 
-/// OSC send + (optional) TTS speak + push to history. Returns Ok even if
-/// only one of the two channels succeeded — caller surfaces partial
-/// success in the toast text.
-pub fn dispatch(
-    text: &str,
-    state: &AppState,
-    app: &AppHandle,
-) -> Result<(), String> {
-    let target = state.target().ok_or_else(|| "@i18n:errOscTarget".to_string())?;
+/// Validate, send OSC, enqueue optional TTS, and save history.
+/// Success means the local UDP send succeeded; it is not a delivery receipt.
+pub fn dispatch(text: &str, state: &AppState, app: &AppHandle) -> Result<(), String> {
+    let text = osc::validate_message(text)?;
+    let target = state
+        .target()
+        .ok_or_else(|| "@i18n:errOscTarget".to_string())?;
     let (play_sound, tts_enabled) = {
         let cfg = state.config.lock().unwrap();
         (cfg.play_sound, cfg.tts_enabled)
@@ -56,11 +54,7 @@ pub fn send_message(
     state: State<'_, AppState>,
     app: AppHandle,
 ) -> Result<(), String> {
-    let trimmed = text.trim();
-    if trimmed.is_empty() {
-        return Err("@i18n:errEmptyMessage".into());
-    }
-    dispatch(trimmed, &state, &app)
+    dispatch(&text, &state, &app)
 }
 
 #[tauri::command]

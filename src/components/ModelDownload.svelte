@@ -11,8 +11,7 @@
   // Pack names live in the i18n dict so they flip with the UI language.
   // Sizes are units, not text — left as-is.
   const PACKS: { kind: ModelKindStr; nameKey: Key; size: string }[] = [
-    { kind: "matcha", nameKey: "matchaName", size: "~85 MB" },
-    { kind: "kokoro", nameKey: "kokoroName", size: "~350 MB" },
+    { kind: "kokoro", nameKey: "kokoroName", size: "~365 MB" },
   ];
 
   const downloading = $derived(store.download !== null);
