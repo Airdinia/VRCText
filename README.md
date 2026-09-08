@@ -66,12 +66,12 @@ npm run tauri dev
 npm run tauri build -- --no-bundle
 ```
 
-Output: `src-tauri\target\release\vrctext.exe`. Use the Tauri CLI so the frontend is built and embedded. The first Rust build also downloads native Sherpa-ONNX libraries; the lockfile does not provide an integrity check for that separate native archive. Development server access is intended for the local machine.
+Output: `src-tauri\target\release\vrctext.exe`. Use the Tauri CLI so the frontend is built and embedded. The first Rust build also downloads native Sherpa-ONNX libraries.
 
-See [CONTRIBUTING.md](CONTRIBUTING.md) for checks and [docs/RELEASING.md](docs/RELEASING.md) for distribution requirements.
+Issues and pull requests are welcome in English or Chinese. Include reproduction steps for bugs, and keep both languages in sync when changing interface text.
 
 ## License and credits
 
-VRCText's original source is [MIT licensed](LICENSE), copyright © 2026 Airdinia. Dependencies and downloaded models retain their own licenses. **The current static TTS build includes eSpeak NG, a GPL component; the complete executable must not be distributed as MIT-only.** See [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md) for the distinction and release requirements.
+VRCText's original source is [MIT licensed](LICENSE), copyright © 2026 Airdinia. Dependencies and models retain their own licenses; see [third-party notices](THIRD_PARTY_NOTICES.md), including GPL requirements for binary distribution.
 
 Built with [Tauri](https://tauri.app/), [Svelte](https://svelte.dev/) and [Sherpa-ONNX](https://github.com/k2-fsa/sherpa-onnx). Bundled typography uses JetBrains Mono and Sarasa Gothic under the SIL Open Font License.

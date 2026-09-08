@@ -4,7 +4,7 @@ The root [MIT license](LICENSE) covers VRCText's original source. It does not re
 
 ## Application dependencies
 
-Exact JavaScript and Rust versions are recorded in `package-lock.json` and `src-tauri/Cargo.lock`. Use `cargo metadata --locked --filter-platform x86_64-pc-windows-msvc` and `npm ls --all` to inspect the resolved dependency trees. A package manifest's license field is an index, not a substitute for its complete license text.
+Exact dependency versions are recorded in `package-lock.json` and `src-tauri/Cargo.lock`. The following table highlights major components; it is not a complete binary license inventory.
 
 | Component | Upstream license / source |
 | --- | --- |
@@ -14,15 +14,13 @@ Exact JavaScript and Rust versions are recorded in `package-lock.json` and `src-
 | Sherpa-ONNX Rust / C++ code | [Apache-2.0](https://github.com/k2-fsa/sherpa-onnx/blob/master/LICENSE) |
 | ONNX Runtime | [MIT and third-party notices](https://github.com/microsoft/onnxruntime/blob/main/ThirdPartyNotices.txt) |
 
-This table highlights components needing attention; it is not a complete binary bill of materials.
-
 ## Static speech libraries
 
-The locked `sherpa-onnx-sys` 1.13.1 build script links `espeak-ng`, `piper_phonemize`, ONNX Runtime, Kaldi/FST components, kissfft, ucd and ssentencepiece, in addition to Sherpa itself. The prebuilt archive is fetched outside Cargo's checksum mechanism. Inspect the actual archive and matching build sources for a release.
+The current Sherpa build statically links eSpeak NG and other native libraries. Its prebuilt archive is downloaded separately and is not verified by Cargo.lock.
 
-[eSpeak NG is GPL-3.0 licensed](https://github.com/espeak-ng/espeak-ng/blob/master/COPYING). Because the current build statically links it, distributing the combined executable requires satisfying GPL terms for the combined work, including access to Corresponding Source. **An MIT file next to the executable, an upstream homepage link, or switching to DLLs alone is not sufficient.** VRCText's original files retain their MIT grant; the combined distribution has additional obligations.
+[eSpeak NG uses GPL-3.0](https://github.com/espeak-ng/espeak-ng/blob/master/COPYING). Distributing the combined executable requires satisfying GPL terms, including providing Corresponding Source, matching build scripts and dependency notices. VRCText's original files retain their MIT grant.
 
-A copy of [GPL-3.0](public/licenses/GPL-3.0.txt) and [Apache-2.0](public/licenses/Apache-2.0.txt) is included for reference. Before releasing a binary, assemble exact native dependency revisions, copyright notices, build instructions and Corresponding Source as described in [RELEASING.md](docs/RELEASING.md). These reference license files alone do not complete that work.
+Copies of [GPL-3.0](public/licenses/GPL-3.0.txt) and [Apache-2.0](public/licenses/Apache-2.0.txt) are included. Before a binary release, verify the native artifacts and assemble their exact sources and notices; the included license texts alone do not complete this requirement.
 
 ## Fonts
 
@@ -41,4 +39,4 @@ Models are fetched on request and are not included in this source tree. Their te
 | Vocos 22 kHz universal vocoder | [Sherpa vocoder release](https://github.com/k2-fsa/sherpa-onnx/releases/tag/vocoder-models), [Vocos upstream](https://github.com/gemelo-ai/vocos) |
 | Kokoro v1.1 | [Model card, Apache-2.0 weights](https://huggingface.co/hexgrad/Kokoro-82M-v1.1-zh), [Sherpa conversion](https://k2-fsa.github.io/sherpa/onnx/tts/pretrained_models/kokoro.html) |
 
-The inspected Matcha archive has no top-level LICENSE. Its README explicitly identifies the DataBaker training dataset as non-commercial only, without stating a model redistribution grant. New Matcha/Vocos downloads have therefore been removed; existing local installations remain readable. Do not bundle or mirror these assets without resolving their terms. Other auxiliary model assets also need an asset-level redistribution review.
+The Matcha archive identifies non-commercial training data without a clear model redistribution grant. New Matcha/Vocos downloads have been removed; existing local installations remain readable. Resolve the terms of each model and auxiliary asset before bundling or mirroring them.

@@ -66,12 +66,12 @@ npm run tauri dev
 npm run tauri build -- --no-bundle
 ```
 
-产物位置：`src-tauri\target\release\vrctext.exe`。请通过 Tauri CLI 构建，以正确生成并嵌入前端。首次 Rust 构建还会下载 Sherpa-ONNX 原生库；Cargo 锁文件不会校验这份单独下载的原生压缩包。开发服务器仅用于本机开发。
+产物位置：`src-tauri\target\release\vrctext.exe`。请通过 Tauri CLI 构建，以正确生成并嵌入前端。首次 Rust 构建还会下载 Sherpa-ONNX 原生库。
 
-贡献及检查方法见 [CONTRIBUTING.md](CONTRIBUTING.md)，二进制分发要求见 [docs/RELEASING.md](docs/RELEASING.md)。
+欢迎提交 Issue 和 PR，中英文均可。报告问题时请附上复现步骤，修改界面文案时请同步两种语言。
 
 ## 许可与致谢
 
-VRCText 的原创源码采用 [MIT 许可](LICENSE)，版权 © 2026 Airdinia。依赖和下载模型适用各自的许可。**当前静态 TTS 构建包含 GPL 组件 eSpeak NG，不能将完整可执行文件按“仅 MIT”分发。** 详见 [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md)。
+VRCText 的原创源码采用 [MIT 许可](LICENSE)，版权 © 2026 Airdinia。依赖和模型适用各自的许可；二进制分发涉及的 GPL 要求等详见[第三方许可说明](THIRD_PARTY_NOTICES.md)。
 
 使用 [Tauri](https://tauri.app/)、[Svelte](https://svelte.dev/) 和 [Sherpa-ONNX](https://github.com/k2-fsa/sherpa-onnx) 构建。内置字体 JetBrains Mono 和 Sarasa Gothic 采用 SIL Open Font License。
