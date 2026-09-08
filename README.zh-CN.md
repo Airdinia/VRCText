@@ -72,6 +72,6 @@ npm run tauri build -- --no-bundle
 
 ## 许可与致谢
 
-VRCText 的原创源码采用 [MIT 许可](LICENSE)，版权 © 2026 congyoua。依赖和下载模型适用各自的许可。**当前静态 TTS 构建包含 GPL 组件 eSpeak NG，不能将完整可执行文件按“仅 MIT”分发。** 详见 [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md)。
+VRCText 的原创源码采用 [MIT 许可](LICENSE)，版权 © 2026 Airdinia。依赖和下载模型适用各自的许可。**当前静态 TTS 构建包含 GPL 组件 eSpeak NG，不能将完整可执行文件按“仅 MIT”分发。** 详见 [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md)。
 
 使用 [Tauri](https://tauri.app/)、[Svelte](https://svelte.dev/) 和 [Sherpa-ONNX](https://github.com/k2-fsa/sherpa-onnx) 构建。内置字体 JetBrains Mono 和 Sarasa Gothic 采用 SIL Open Font License。

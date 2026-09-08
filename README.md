@@ -72,6 +72,6 @@ See [CONTRIBUTING.md](CONTRIBUTING.md) for checks and [docs/RELEASING.md](docs/R
 
 ## License and credits
 
-VRCText's original source is [MIT licensed](LICENSE), copyright © 2026 congyoua. Dependencies and downloaded models retain their own licenses. **The current static TTS build includes eSpeak NG, a GPL component; the complete executable must not be distributed as MIT-only.** See [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md) for the distinction and release requirements.
+VRCText's original source is [MIT licensed](LICENSE), copyright © 2026 Airdinia. Dependencies and downloaded models retain their own licenses. **The current static TTS build includes eSpeak NG, a GPL component; the complete executable must not be distributed as MIT-only.** See [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md) for the distinction and release requirements.
 
 Built with [Tauri](https://tauri.app/), [Svelte](https://svelte.dev/) and [Sherpa-ONNX](https://github.com/k2-fsa/sherpa-onnx). Bundled typography uses JetBrains Mono and Sarasa Gothic under the SIL Open Font License.
