@@ -4,6 +4,12 @@
 
 [English](README.md) · [简体中文](README.zh-CN.md) · [下载发布版](https://github.com/Airdinia/VRCText/releases)
 
+[![源码许可：MIT](https://img.shields.io/badge/Source%20license-MIT-yellow.svg)](LICENSE)
+[![版本](https://img.shields.io/github/v/release/Airdinia/VRCText?include_prereleases&color=blue)](https://github.com/Airdinia/VRCText/releases)
+[![下载量](https://img.shields.io/github/downloads/Airdinia/VRCText/total?color=brightgreen)](https://github.com/Airdinia/VRCText/releases)
+[![Stars](https://img.shields.io/github/stars/Airdinia/VRCText?style=social)](https://github.com/Airdinia/VRCText/stargazers)
+![Windows 10/11](https://img.shields.io/badge/Windows%2010%2F11-0078D6?logo=windows&logoColor=white)
+
 ## 功能
 
 - `Enter` 发送文字，`Shift+Enter` 换行。

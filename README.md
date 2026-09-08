@@ -4,6 +4,12 @@ A Windows desktop app for sending text to VRChat's OSC chatbox, with optional lo
 
 [English](README.md) · [简体中文](README.zh-CN.md) · [Releases](https://github.com/Airdinia/VRCText/releases)
 
+[![Source license: MIT](https://img.shields.io/badge/Source%20license-MIT-yellow.svg)](LICENSE)
+[![Release](https://img.shields.io/github/v/release/Airdinia/VRCText?include_prereleases&color=blue)](https://github.com/Airdinia/VRCText/releases)
+[![Downloads](https://img.shields.io/github/downloads/Airdinia/VRCText/total?color=brightgreen)](https://github.com/Airdinia/VRCText/releases)
+[![Stars](https://img.shields.io/github/stars/Airdinia/VRCText?style=social)](https://github.com/Airdinia/VRCText/stargazers)
+![Windows 10/11](https://img.shields.io/badge/Windows%2010%2F11-0078D6?logo=windows&logoColor=white)
+
 ## Features
 
 - Send chatbox messages with `Enter`; use `Shift+Enter` for a newline.
