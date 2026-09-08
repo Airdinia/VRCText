@@ -1,10 +1,8 @@
 //! Background downloader for sherpa-onnx TTS model bundles. Progress is
 //! surfaced to the UI via `AppHandle.emit`.
 //!
-//! Kokoro v1.1 is offered for download (Chinese / English, ~365 MB).
-//! Existing Matcha installations remain readable for compatibility; new
-//! Matcha downloads are not offered because the archive has unclear model
-//! licensing and identifies its training dataset as non-commercial only.
+//! Matcha zh-baker with Vocos (~129 MB) and Kokoro v1.1 (~365 MB)
+//! are downloaded on demand from upstream releases.
 //!
 //! Packs are extracted into `%APPDATA%\vrctext\vrctext\data\models\` and discovered by the
 //! TTS layer on startup.
@@ -18,9 +16,17 @@ use std::thread;
 
 const KOKORO_URL: &str =
     "https://github.com/k2-fsa/sherpa-onnx/releases/download/tts-models/kokoro-multi-lang-v1_1.tar.bz2";
+const MATCHA_URL: &str =
+    "https://github.com/k2-fsa/sherpa-onnx/releases/download/tts-models/matcha-icefall-zh-baker.tar.bz2";
+const VOCOS_URL: &str =
+    "https://github.com/k2-fsa/sherpa-onnx/releases/download/vocoder-models/vocos-22khz-univ.onnx";
+const VOCOS_FILE: &str = "vocos-22khz-univ.onnx";
 
 // Upstream GitHub release metadata, checked against the asset on 2026-09-08.
 const KOKORO_SHA256: &str = "a3f4c73d043860e3fd2e5b06f36795eb81de0fc8e8de6df703245edddd87dbad";
+const MATCHA_SHA256: &str = "20de2ec034b55562609d6362771c934905dfe11d0f41ec103d593427ad9a7efb";
+// Baseline verified against the file downloaded from the official release.
+const VOCOS_SHA256: &str = "0574a135aa1db2de6e181050db2ec528496cacd4a4701fc5d7faf9f9804c0081";
 
 /// Which pack the downloader is fetching.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -55,9 +61,7 @@ impl ModelKind {
                 let acoustic = ["model-steps-3.onnx", "model-steps-6.onnx"]
                     .iter()
                     .any(|n| d.join(n).exists());
-                acoustic
-                    && d.join("tokens.txt").exists()
-                    && models_dir.join("vocos-22khz-univ.onnx").exists()
+                acoustic && d.join("tokens.txt").exists() && models_dir.join(VOCOS_FILE).exists()
             }
             ModelKind::KokoroMultiLang => {
                 let model = d.join("model.onnx").exists() || d.join("model.int8.onnx").exists();
@@ -123,7 +127,18 @@ fn run(
     std::fs::create_dir(&staging).map_err(|e| format!("@i18n:dlCreateDirFail|{e}"))?;
     let result = (|| {
         match kind {
-            ModelKind::MatchaZhBaker => return Err("Matcha downloads are no longer offered".into()),
+            ModelKind::MatchaZhBaker => {
+                let vocos = models_dir.join(VOCOS_FILE);
+                if vocos.exists() {
+                    std::fs::copy(&vocos, staging.join(VOCOS_FILE))
+                        .map_err(|e| format!("@i18n:dlWriteFile|{e}"))?;
+                }
+                run_matcha(&staging, state)?;
+                if !vocos.exists() {
+                    std::fs::rename(staging.join(VOCOS_FILE), vocos)
+                        .map_err(|e| format!("@i18n:dlWriteFile|{e}"))?;
+                }
+            }
             ModelKind::KokoroMultiLang => run_kokoro(&staging, state)?,
         }
         let target = models_dir.join(kind.pack_dir());
@@ -137,6 +152,21 @@ fn run(
     })();
     let _ = std::fs::remove_dir_all(&staging);
     result
+}
+
+fn run_matcha(models_dir: &Path, state: &Arc<Mutex<DownloadState>>) -> Result<(), String> {
+    let vocos_path = models_dir.join("vocos-22khz-univ.onnx");
+    if !vocos_path.exists() {
+        set_status(state, "@i18n:dlVocoder", 0.0);
+        download_to(VOCOS_URL, VOCOS_SHA256, &vocos_path, state, (0.0, 0.25))?;
+    }
+    let tmp = models_dir.join("matcha-icefall-zh-baker.tar.bz2");
+    set_status(state, "@i18n:dlMatcha", 0.25);
+    download_to(MATCHA_URL, MATCHA_SHA256, &tmp, state, (0.25, 0.9))?;
+    set_status(state, "@i18n:dlExtract", 0.9);
+    extract(&tmp, models_dir)?;
+    let _ = std::fs::remove_file(&tmp);
+    verify_post_extract(ModelKind::MatchaZhBaker, models_dir)
 }
 
 fn run_kokoro(models_dir: &Path, state: &Arc<Mutex<DownloadState>>) -> Result<(), String> {
@@ -287,6 +317,23 @@ pub fn installed_kinds(models_dir: &Path) -> Vec<ModelKind> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    #[ignore = "requires the official Matcha and Vocos assets (about 129 MB)"]
+    fn official_matcha_archive() {
+        let fixtures = PathBuf::from(std::env::var_os("VRCTEXT_MODEL_FIXTURES").unwrap());
+        let archive = fixtures.join("matcha-icefall-zh-baker.tar.bz2");
+        let vocos = fixtures.join(VOCOS_FILE);
+        verify_digest(&archive, MATCHA_SHA256).unwrap();
+        verify_digest(&vocos, VOCOS_SHA256).unwrap();
+        let dir = temp_dir();
+        extract(&archive, &dir).unwrap();
+        assert!(verify_post_extract(ModelKind::MatchaZhBaker, &dir).is_err());
+        std::fs::copy(vocos, dir.join(VOCOS_FILE)).unwrap();
+        verify_post_extract(ModelKind::MatchaZhBaker, &dir).unwrap();
+        assert!(installed_kinds(&dir).contains(&ModelKind::MatchaZhBaker));
+        std::fs::remove_dir_all(dir).unwrap();
+    }
 
     /// Set VRCTEXT_MODEL_FIXTURES to the directory containing the official
     /// Kokoro archive, then run this test explicitly with --ignored.

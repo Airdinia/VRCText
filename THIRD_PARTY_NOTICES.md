@@ -26,4 +26,4 @@ The script and [static-library adapter](third-party/onnx-static/CMakeLists.txt) 
 
 ## Models
 
-Models are downloaded separately and are not part of the EXE. Kokoro v1.1 weights are [Apache-2.0](https://huggingface.co/hexgrad/Kokoro-82M-v1.1-zh); preserve notices included in its archive. Existing Matcha installations remain readable, but new Matcha downloads are disabled because the archive does not provide clear redistribution terms.
+Models are downloaded separately and are not part of the EXE. Kokoro v1.1 weights are [Apache-2.0](https://huggingface.co/hexgrad/Kokoro-82M-v1.1-zh); preserve notices included in its archive. [Matcha zh-baker](https://k2-fsa.github.io/sherpa/onnx/tts/pretrained_models/matcha.html) and its [Vocos vocoder](https://github.com/k2-fsa/sherpa-onnx/releases/tag/vocoder-models) are also available as on-demand downloads from official Sherpa releases. Model and dataset terms remain separate from the application license.

@@ -32,6 +32,7 @@ pub struct DownloadErrorEvent {
 
 fn kind_from_str(s: &str) -> Option<ModelKind> {
     match s {
+        "matcha" => Some(ModelKind::MatchaZhBaker),
         "kokoro" => Some(ModelKind::KokoroMultiLang),
         _ => None,
     }

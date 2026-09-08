@@ -31,7 +31,7 @@ Exploring quietly, unable to use your mic, or simply more comfortable typing? Op
 
 - **Type and send** — `Enter` to send, `Shift+Enter` for a newline, and a character counter to keep you within the limit.
 - **Say it again without retyping** — Keep your last 50 messages. Click to insert one into your draft, hold to resend, or browse history with the arrow keys.
-- **Give your text a voice** — Use installed Windows voices or download Kokoro for Chinese and English speech, synthesized on your own PC.
+- **Give your text a voice** — Use installed Windows voices or download Matcha (Chinese) or Kokoro (Chinese and English), synthesized on your own PC.
 - **Choose where speech goes** — Pick a voice and output device, then preview it. With a virtual audio cable, friends in VRChat can hear your speech, too.
 - **Keep the controls close** — Always-on-top mode, a typing indicator, a chatbox notification sound toggle, and English / Chinese UI.
 - **No account to create** — Settings and history stay local, with no application telemetry. Text chat needs no speech model download.
@@ -53,7 +53,7 @@ Open settings and choose a speech engine:
 | Engine | A good fit for | What you need |
 | --- | --- | --- |
 | **Windows Native (SAPI)** | Using voices already on your system | An installed Windows voice; no extra model download |
-| **AI Model (Kokoro)** | Trying AI voices in Chinese and English | An in-app model download of about 365 MB; synthesis runs locally afterward |
+| **AI Model (Matcha / Kokoro)** | Trying AI voices in Chinese and English | Download Matcha (Chinese, about 129 MB) or Kokoro (Chinese and English, about 365 MB) in the app; synthesis runs locally afterward |
 
 Choose a voice and audio output device, use **Preview** to check the result, then enable speech with the speaker button at the top of the window. Messages you send will now be read aloud as well.
 

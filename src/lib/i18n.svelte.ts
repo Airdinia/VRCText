@@ -96,6 +96,9 @@ const dict = {
     // Download status (static)
     dlPrepare: "准备下载 {arg}…",
     dlComplete: "完成",
+    dlVocoder: "下载基础音频组件 (~54 MB)",
+    dlMatcha: "下载 Matcha 模型 (~75 MB)",
+    dlExtract: "解压…",
     dlKokoro: "下载 Kokoro 模型 (~365 MB，全精度)",
     dlExtractLarge: "解压（文件较多，请耐心等待）…",
     // Download errors
@@ -207,6 +210,9 @@ const dict = {
     errAudioOpen: "Cannot open this audio device",
     dlPrepare: "Preparing to download {arg}…",
     dlComplete: "Done",
+    dlVocoder: "Downloading base audio components (~54 MB)",
+    dlMatcha: "Downloading Matcha model (~75 MB)",
+    dlExtract: "Extracting…",
     dlKokoro: "Downloading Kokoro model (~365 MB, full precision)",
     dlExtractLarge: "Extracting (this may take a while)…",
     dlCreateDirFail: "Failed to create directory",
